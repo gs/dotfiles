@@ -47,3 +47,6 @@
 [submodule ".vim/bundle/vim-hsftp"]
 	path = .vim/bundle/vim-hsftp
 	url = git@github.com:hesselbom/vim-hsftp.git
+[submodule ".vim/bundle/ctrlp"]
+	path = .vim/bundle/ctrlp
+	url = git@github.com:kien/ctrlp.vim.git
