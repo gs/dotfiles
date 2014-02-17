@@ -1,9 +1,14 @@
-map ,t :CommandT<cr>
 map ,a :Ag 
 map Q :bd!<cr>
 
-map <Tab> :bn<cr>
-map <S-Tab> :bp<cr>
 map <space> :nohl<cr>
 nmap <leader>d :bprevious<CR>:bdelete #<CR>
 
+command W w
+nnoremap <silent> [b :bprevious<CR>
+nnoremap <silent> ]b :bnext<CR>
+nnoremap <silent> [B :bfirst<CR>
+nnoremap <silent> ]B :blast<CR>
+
+
+map ,np :e ~/Google\ Drive/project_notes/notes.txt<cr>
