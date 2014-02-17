@@ -109,7 +109,7 @@ augroup END
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 :set t_Co=256 " 256 colors
 :set background=dark
-:color xterm16
+:color molokai
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " STATUS LINE
@@ -127,6 +127,7 @@ nnoremap <c-h> <c-w>h
 nnoremap <c-l> <c-w>l
 " Insert a hash rocket with <c-l>
 imap <c-l> <space>=><space>
+imap <c-b> import ipdb;ipdb.set_trace() 
 " Can't be bothered to understand ESC vs <c-c> in insert mode
 imap <c-c> <esc>
 nnoremap <leader><leader> <c-^>
@@ -449,7 +450,7 @@ function! ToggleQuickfix()
 endfunction
 
 function! OpenQuickfix()
-  cgetfile tmp/quickfix
+  cgetfile ~/tmp/quickfix
   topleft cwindow
   if &ft == "qf"
       cc
@@ -508,3 +509,6 @@ function! SelectaIdentifier()
   call SelectaCommand("breadth-first-find * -type f \| head -10000", "-s " . @z, ":e")
 endfunction
 nnoremap <c-g> :call SelectaIdentifier()<cr>
+let g:ctrlp_max_files=0
+set ttyfast
+set complete-=i
