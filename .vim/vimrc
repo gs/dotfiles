@@ -311,7 +311,7 @@ function! MapCR()
 endfunction
 call MapCR()
 nnoremap <leader>T :call RunNearestTest()<cr>
-nnoremap <leader>a :call RunTests('')<cr>
+nnoremap <leader>t :call RunTests('')<cr>
 nnoremap <leader>c :w\|:!script/features<cr>
 nnoremap <leader>w :w\|:!script/features --profile wip<cr>
 
@@ -323,7 +323,7 @@ function! RunTestFile(...)
     endif
 
     " Run the tests for the previously-marked file.
-    let in_test_file = match(expand("%"), '\(.feature\|_spec.rb\)$') != -1
+    let in_test_file = match(expand("%"), '\(.feature\|_spec.rb\|_test.rb\)$') != -1
     if in_test_file
         call SetTestFile()
     elseif !exists("t:grb_test_file")
@@ -350,6 +350,9 @@ function! RunTests(filename)
     if match(a:filename, '\.feature$') != -1
         exec ":!script/features " . a:filename
     else
+      if match(a:filename, '_test\.rb$') != -1
+        exec ":!ruby " . a:filename
+      else
         " First choice: project-specific test script
         if filereadable("script/test")
             exec ":!script/test " . a:filename
@@ -370,6 +373,7 @@ function! RunTests(filename)
         else
             exec ":!rspec --color " . a:filename
         end
+      end
     end
 endfunction
 
