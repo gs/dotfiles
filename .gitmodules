@@ -28,3 +28,4 @@
 [submodule ".vim/bundle/vim-projectile"]
     path = .vim/bundle/vim-projectile
     url = git@github.com:tpope/vim-projectile.git
+	url = git@github.com:kien/ctrlp.vim.git
