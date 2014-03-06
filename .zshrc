@@ -61,13 +61,9 @@ function cdf() { cd *$1*/ } # stolen from @topfunky
 function das() {
     cd ~/proj/destroyallsoftware.com/destroyallsoftware.com
     pwd
-    export RUBY_HEAP_MIN_SLOTS=1000000
-    export RUBY_HEAP_SLOTS_INCREMENT=1000000
-    export RUBY_HEAP_SLOTS_GROWTH_FACTOR=1
-    export RUBY_GC_MALLOC_LIMIT=1000000000
-    export RUBY_HEAP_FREE_MIN=500000
-    . /Volumes/misc/filing/business/destroy\ all\ software\ llc/s3.sh
-    . /Volumes/misc/filing/business/destroy\ all\ software\ llc/braintree.sh
+    . ~/Documents/filing/business/destroy\ all\ software\ llc/s3.sh
+    . ~/Documents/filing/business/destroy\ all\ software\ llc/braintree.sh
+    . ~/Documents/filing/business/destroy\ all\ software\ llc/cloudfront.sh
 }
 alias v="view -"
 function m() {
@@ -119,10 +115,28 @@ function up()
     test $DIR != "/" && echo $DIR/$TARGET
 }
 
+# Switch projects
+function p() {
+    (
+        set -e
+        proj=$(ls ~/proj | selecta)
+        if [[ -n "$proj" ]]; then
+            cd ~/proj/$proj
+        fi
+    )
+}
+
+zstyle ':completion:*:*:git:*' script /usr/local/share/zsh/site-functions
+
 ### Added by the Heroku Toolbelt
 export PATH="/usr/local/heroku/bin:$PATH"
 
 # Initialize RVM
-PATH=$PATH:$HOME/.rvm/bin
-[[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm"
+#PATH=$PATH:$HOME/.rvm/bin
+#[[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm"
 
+#export PATH="$HOME/.rbenv/bin:$PATH"
+#eval "$(rbenv init -)"
+
+#source /usr/local/share/chruby/chruby.sh
+#source /usr/local/share/chruby/auto.sh

@@ -69,7 +69,11 @@ set modelines=3
 " Turn folding off for real, hopefully
 set foldmethod=manual
 set nofoldenable
+" Insert only one space when joining lines that contain sentence-terminating
+" punctuation like `.`.
 set nojoinspaces
+" If a file is changed outside of vim, automatically reload it without asking
+set autoread
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " CUSTOM AUTOCMDS
@@ -103,6 +107,9 @@ augroup vimrcEx
   " to run commands there.
   autocmd! CmdwinEnter * :unmap <cr>
   autocmd! CmdwinLeave * :call MapCR()
+
+  " *.md is markdown
+  autocmd! BufNewFile,BufRead *.md setlocal ft=
 augroup END
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -256,7 +263,7 @@ function! ShowRoutes()
   " Delete everything
   :normal 1GdG
   " Put routes output in buffer
-  :0r! zeus rake -s routes
+  :0r! rake -s routes
   " Size window to number of lines (1 plus rake output length)
   :exec ":normal " . line("$") . "_ "
   " Move cursor to bottom
