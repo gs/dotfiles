@@ -13,5 +13,4 @@ nnoremap <silent> ]B :blast<CR>
 
 map ,np :e ~/Google\ Drive/project_notes/notes.txt<cr>
 map <c-i> <esc>yiw:FuzzyFinderTag <c-r>"<cr>
-map <c-a> <esc>:w!<cr>
 map ?? :CtrlPMRUFiles<cr>
