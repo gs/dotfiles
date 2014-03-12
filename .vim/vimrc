@@ -534,10 +534,14 @@ endfunction
 nnoremap <c-g> :call SelectaIdentifier()<cr>
 
 function! SelectaAFile()
-  " Yank the word under the cursor into the z register
-  let file = expand("%:t:r")
-  " Fuzzy match files in the current directory, starting with the word under
-  " the cursor
+  " Get filename of currenlty opened file
+  let filename = expand("%:t:r")
+  if match(filename, "_test") != -1
+    let file = substitute(filename, "_test","", "")
+  else
+    let file = filename . "_test"
+  endif
+  " Fuzzy match alternate file (_test, code)
   call SelectaCommand("find * -type f", "-s " . file, ":e")
 endfunction
 nnoremap <c-a> :call SelectaAFile()<cr>
