@@ -117,7 +117,7 @@ augroup END
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 :set t_Co=256 " 256 colors
 :set background=dark
-:color molokai
+:color tir_black
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " STATUS LINE
@@ -532,6 +532,15 @@ function! SelectaIdentifier()
   call SelectaCommand("find * -type f", "-s " . @z, ":e")
 endfunction
 nnoremap <c-g> :call SelectaIdentifier()<cr>
+
+function! SelectaAFile()
+  " Yank the word under the cursor into the z register
+  let file = expand("%:t:r")
+  " Fuzzy match files in the current directory, starting with the word under
+  " the cursor
+  call SelectaCommand("find * -type f", "-s " . file, ":e")
+endfunction
+nnoremap <c-a> :call SelectaAFile()<cr>
 
 let g:ctrlp_max_files=0
 set ttyfast
