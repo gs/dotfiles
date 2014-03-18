@@ -547,5 +547,7 @@ endfunction
 nnoremap <c-a> :call SelectaAFile()<cr>
 
 let g:ctrlp_max_files=0
+let g:ctrlp_match_func = {'match' : 'matcher#cmatch' }
 set ttyfast
 set complete-=i
+set nu
