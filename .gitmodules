@@ -31,6 +31,3 @@
 [submodule ".vim/bundle/vim-projectile"]
     path = .vim/bundle/vim-projectile
     url = git@github.com:tpope/vim-projectile.git
-[submodule ".vim/bundle/ctrlp-cmatcher"]
-	path = .vim/bundle/ctrlp-cmatcher
-	url = git@github.com:JazzCore/ctrlp-cmatcher.git
