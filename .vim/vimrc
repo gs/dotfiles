@@ -163,11 +163,11 @@ function! InsertTabWrapper()
     if !col || getline('.')[col - 1] !~ '\k'
         return "\<tab>"
     else
-        return "\<c-p>"
+        return "\<c-n>"
     endif
 endfunction
 inoremap <tab> <c-r>=InsertTabWrapper()<cr>
-inoremap <s-tab> <c-n>
+inoremap <s-tab> <c-p>
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " OPEN FILES IN DIRECTORY OF CURRENT FILE
@@ -547,7 +547,5 @@ endfunction
 nnoremap <c-a> :call SelectaAFile()<cr>
 
 let g:ctrlp_max_files=0
-let g:ctrlp_match_func = {'match' : 'matcher#cmatch' }
 set ttyfast
 set complete-=i
-set nu
