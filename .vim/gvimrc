@@ -1,1 +1,5 @@
-/Users/grzegorz/.vim/gvimrc
+:set go-=T
+:set go-=e
+:set go-=r
+
+:set guifont=Monaco:h12
