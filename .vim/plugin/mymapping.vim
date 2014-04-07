@@ -14,4 +14,5 @@ nnoremap <silent> ]B :blast<CR>
 map ,np :e ~/Google\ Drive/project_notes/notes.txt<cr>
 map <c-i> <esc>yiw:tjump <c-r>"<cr>
 map ?? :CtrlPMRUFiles<cr>
+map <c-b> :CtrlPBuffer<cr>
 map ,. <esc>:w!<cr>
