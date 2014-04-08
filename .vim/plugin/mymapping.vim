@@ -16,3 +16,7 @@ map <c-i> <esc>yiw:tjump <c-r>"<cr>
 map ?? :CtrlPMRUFiles<cr>
 map <c-b> :CtrlPBuffer<cr>
 map ,. <esc>:w!<cr>
+map <C-s> <esc>:w<CR>
+imap <C-s> <esc>:w<CR>
+map <C-t> <esc>:tabnew<CR>
+map <C-x> <C-w>c
