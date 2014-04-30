@@ -117,7 +117,7 @@ augroup END
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 :set t_Co=256 " 256 colors
 :set background=dark
-:color moun
+:color tir_black
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " STATUS LINE
@@ -128,6 +128,7 @@ augroup END
 " MISC KEY MAPS
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 map <leader>y "*y
+map <c-c> "*y
 " Move around splits with <c-hjkl>
 nnoremap <c-j> <c-w>j
 nnoremap <c-k> <c-w>k
@@ -201,7 +202,7 @@ function! PromoteToLet()
   :normal ==
 endfunction
 :command! PromoteToLet :call PromoteToLet()
-:map <leader>p :PromoteToLet<cr>
+:map <leader>P :PromoteToLet<cr>
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " EXTRACT VARIABLE (SKETCHY)
@@ -322,7 +323,7 @@ function! RunTestFile(...)
     endif
 
     " Run the tests for the previously-marked file.
-    let in_test_file = match(expand("%"), '\(.feature\|_spec.rb\|_test.rb\)$') != -1
+    let in_test_file = match(expand("%"), '\(.feature\|_spec.rb\|_test.rb\|_test.py\)$') != -1
     if in_test_file
         call SetTestFile()
     elseif !exists("t:grb_test_file")
@@ -351,6 +352,9 @@ function! RunTests(filename)
     else
       if match(a:filename, '_test\.rb$') != -1
         exec ":!ruby " . a:filename
+      elseif match(a:filename, '_test\.py$') != -1
+        " exec ":testify " . a:filename
+        exec ":silent !echo testify " . a:filename . " |pbcopy"
       else
         " First choice: project-specific test script
         if filereadable("script/test")
