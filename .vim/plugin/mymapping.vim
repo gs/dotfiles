@@ -15,7 +15,7 @@ map ,nn :e ~/Google\ Drive/project_notes/notes.txt<cr>
 map ,np :e ~/Google\ Drive/project_notes/
 map <c-i> <esc>yiw:tjump <c-r>"<cr>
 map ?? :CtrlPMRUFiles<cr>
-map ,r :CtrlBufTag<cr>
+map ,r :CtrlPBufTag<cr>
 map ,b :CtrlPBuffer<cr>
 map ,. <esc>:w!<cr>
 imap ,. <esc>:w!<cr>
