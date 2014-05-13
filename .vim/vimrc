@@ -46,7 +46,7 @@ set backspace=indent,eol,start
 " display incomplete commands
 set showcmd
 " Enable highlighting for syntax
-syntax on
+"syntax on
 " Enable file type detection.
 " Use the default filetype settings, so that mail gets 'tw' set to 72,
 " 'cindent' is on in C files, etc.
@@ -116,8 +116,8 @@ augroup END
 " COLOR
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 :set t_Co=256 " 256 colors
-:set background=dark
-:color tir_black
+:set background=light
+:color grb-light
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " STATUS LINE
@@ -342,6 +342,18 @@ function! SetTestFile()
     let t:grb_test_file=@%
 endfunction
 
+function! FindTest()
+  let func = getline(search('def\stest\_\w\+\ze' , 'bn'))
+  let func = substitute(func,'\s*def\s', '', 'g')
+  let func = substitute(func,'(.*):', '', 'g')
+
+  let cls = getline(search('^class\s\zs\w\+\ze', 'bn'))
+  let cls = substitute(cls,'class\s', '', 'g')
+  let cls = substitute(cls,'(.*):', '', 'g')
+
+  return cls . "." . func
+endfunction
+
 function! RunTests(filename)
     " Write the file and run tests for the given filename
     if expand("%") != ""
@@ -353,8 +365,8 @@ function! RunTests(filename)
       if match(a:filename, '_test\.rb$') != -1
         exec ":!ruby " . a:filename
       elseif match(a:filename, '_test\.py$') != -1
-        " exec ":testify " . a:filename
-        exec ":silent !echo testify " . a:filename . " |pbcopy"
+        let tst = FindTest()
+        exec ":silent !echo testify " . a:filename . " " . tst . " |pbcopy"
       else
         " First choice: project-specific test script
         if filereadable("script/test")
@@ -553,3 +565,4 @@ nnoremap <c-a> :call SelectaAFile()<cr>
 let g:ctrlp_max_files=0
 set ttyfast
 set complete-=i
+let g:ycm_collect_identifiers_from_tags_files=1
