@@ -28,3 +28,6 @@
 [submodule ".vim/bundle/vim-projectile"]
     path = .vim/bundle/vim-projectile
     url = git@github.com:tpope/vim-projectile.git
+[submodule ".vim/bundle/YouCompleteMe"]
+	path = .vim/bundle/YouCompleteMe
+	url = git@github.com:Valloric/YouCompleteMe.git
