@@ -117,7 +117,7 @@ augroup END
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 :set t_Co=256 " 256 colors
 :set background=light
-:color grb-light
+:color grb
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " STATUS LINE
@@ -574,3 +574,5 @@ let g:ctrlp_max_files=0
 set ttyfast
 set complete-=i
 let g:ycm_collect_identifiers_from_tags_files=1
+let g:ctrlp_match_window = 'bottom,order:ttb,min:1,max:40,results:30'
+let g:ctrlp_use_caching = 1
