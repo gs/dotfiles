@@ -337,7 +337,7 @@ function! RunNearestTest()
         let spec_line_number = line('.')
         call RunTestFile(":" . spec_line_number)
     elseif match(expand("%"), '_test\.rb$') != -1
-        call FindRubyTest(expand("%"))
+        exec ":!ruby " . FindRubyTest(expand("%"))
     endif
 endfunction
 
@@ -350,11 +350,11 @@ function! FindRubyTest(filename)
   let func_no = search('\s*def\stest\_\w\+\ze' , 'bcn')
   let end_no  = search('\s*end$', 'bcn')
   if func_no < end_no && end_no != line('.')
-      exec  ":!ruby " . a:filename
+      return a:filename
   else
       let func = getline(func_no)
       let func = substitute(func,'\s*def\s', '', 'g')
-      exec ":!ruby " . a:filename . " -n " . func
+      return a:filename . " -n " . func
   endif
 endfunction
 
@@ -385,7 +385,7 @@ function! RunTests(filename)
     exec ":!script/features " . a:filename
   else
     if match(a:filename, '_test\.rb$') != -1
-      call FindRubyTest(a:filename)
+      exec ":!ruby " . FindRubyTest(a:filename)
     elseif match(a:filename, '_test\.py$') != -1
       let tst = FindTest()
       if system("uname") == "Darwin\n"
