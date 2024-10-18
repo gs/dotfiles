@@ -1,0 +1,73 @@
+[color]
+  ui = auto
+  diff = auto
+  status = auto
+  branch = auto
+  interactive = auto
+  grep = auto
+
+[core]
+  editor=/opt/homebrew/bin/nvim
+  # sshCommand = ssh -i ~/.ssh/office_deliverists
+  sshCommand = ssh -i ~/.ssh/gs_deliveristsio
+
+[merge]
+  summary=false
+  tool = opendiff
+
+[branch]
+  autosetupmerge = always
+  autosetuprebase = always
+
+[apply]
+
+[alias]
+  st = status
+  ci = commit
+  co = checkout
+  di = diff
+  dc = diff --cached
+  amend = commit --amend
+  aa = add --all
+  ff = merge --ff-only
+  pullff = pull --ff-only
+  noff = merge --no-ff
+  div = divergence
+  gn = goodness
+  gnc = goodness --cached
+  fa = fetch --all
+  pom = push origin main
+  b = branch
+  ds = diff --stat=160,120
+  dh1 = diff HEAD~1
+  head = !git l -1
+  h = !git head
+  hp = !show_git_head
+#    r = !git l -30
+  r = log --decorate --oneline --graph
+  ra = !git r --all
+  l = log --decorate --oneline --graph
+  la = !git l --all
+  pr = !hub pull-request
+  usr = !git-usr
+  one = show -s --pretty='format:%h (%s)'
+  rlog = !sh -c 'git log --color \"$@\"|fmt -s -w 79|less -FRSX' _
+  summary = log --abbrev-commit --pretty=oneline --author="sfistak" --since=last.mon --reverse
+
+
+[diff]
+  tool = opendiff
+[diff "ruby"]
+  funcname = "^ *\\(\\(def\\) .*\\)"
+[web]
+  browser = open
+[pull]
+  rebase = true
+#[push]
+#  default = tracking
+[alias]
+  # Mark a repo as trusted
+  trust = "!mkdir -p .git/safe"
+[user]
+	name = gs
+	email = gs@deliverists.io
