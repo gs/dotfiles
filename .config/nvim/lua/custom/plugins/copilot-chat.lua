@@ -1,5 +1,6 @@
 return {
   'CopilotC-Nvim/CopilotChat.nvim',
+  branch = 'main',
   opts = {
     debug = true,
     show_help = 'yes',
