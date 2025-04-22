@@ -230,6 +230,10 @@ automatically-unhide-macos-hidden-apps = false
     run = 'move-node-to-workspace X'
 
 [[on-window-detected]]
+    if.app-id = 'com.github.wez.wezterm'
+    run = 'move-node-to-workspace X'
+
+[[on-window-detected]]
     if.app-id = 'com.todesktop.230331mzl4w4u92'
     run = 'move-node-to-workspace X'
 
