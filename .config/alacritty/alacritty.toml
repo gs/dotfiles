@@ -1,0 +1,3 @@
+import = [ "~/.config/alacritty/theme.toml", "~/.config/alacritty/font.toml", "~/.config/alacritty/font-size.toml", "~/.local/share/omakub/defaults/alacritty.toml" ]
+[window]
+  opacity = 0.8
