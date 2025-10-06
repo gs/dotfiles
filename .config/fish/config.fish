@@ -10,6 +10,7 @@ if status is-interactive
 end
 
 # opencode
+fish_add_path ~/bin/
 fish_add_path /home/sfistak/.opencode/bin
 fish_add_path ~/.local/share/mise/shims/
 

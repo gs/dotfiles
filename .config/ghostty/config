@@ -42,11 +42,11 @@
 # # Just for example:
 # resize-overlay-duration = 4s 200ms
 
-theme = rose-pine
+theme = Rose Pine
 cursor-style = block
-font-family = CaskaydiaMono Nerd Font
+font-family = CaskaydiaMono Nerd Font Mono
 font-size = 14
 cursor-color = #FF0000
-background-opacity= 0.7
+background-opacity= 0.95
 copy-on-select = true
 confirm-close-surface = false
