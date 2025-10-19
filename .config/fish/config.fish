@@ -18,3 +18,4 @@ fish_add_path ~/.local/share/mise/shims/
 set --export BUN_INSTALL "$HOME/.bun"
 set --export PATH $BUN_INSTALL/bin $PATH
 export ELECTRON_OZONE_PLATFORM_HINT=auto
+fish_add_path /Users/sfistak/.opencode/bin
