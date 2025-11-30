@@ -126,21 +126,21 @@ automatically-unhide-macos-hidden-apps = false
     alt-7 = 'workspace 7'
     alt-8 = 'workspace 8'
     alt-9 = 'workspace 9'
-    alt-b = 'workspace B'
-    alt-d = 'workspace D'
-    alt-f = 'workspace F'
-    alt-g = 'workspace G'
-    alt-i = 'workspace I'
-    alt-m = 'workspace M'
-    alt-p = 'workspace P'
-    alt-q = 'workspace Q'
-    alt-r = 'workspace R'
-    alt-t = 'workspace T'
-    alt-u = 'workspace U'
-    alt-v = 'workspace V'
-#    alt-w = 'workspace W'
-    alt-x = 'workspace X'
-    alt-y = 'workspace Y'
+#    alt-b = 'workspace B'
+#    alt-d = 'workspace D'
+#    alt-f = 'workspace F'
+#    alt-g = 'workspace G'
+#    alt-i = 'workspace I'
+#    alt-m = 'workspace M'
+#    alt-p = 'workspace P'
+#    alt-q = 'workspace Q'
+#    alt-r = 'workspace R'
+#    alt-t = 'workspace T'
+#    alt-u = 'workspace U'
+#    alt-v = 'workspace V'
+##    alt-w = 'workspace W'
+#    alt-x = 'workspace X'
+#    alt-y = 'workspace Y'
 
     # See: https://nikitabobko.github.io/AeroSpace/commands#move-node-to-workspace
     alt-shift-1 = 'move-node-to-workspace 1'
@@ -152,21 +152,21 @@ automatically-unhide-macos-hidden-apps = false
     alt-shift-7 = 'move-node-to-workspace 7'
     alt-shift-8 = 'move-node-to-workspace 8'
     alt-shift-9 = 'move-node-to-workspace 9'
-    alt-shift-b = 'move-node-to-workspace B'
-    alt-shift-d = 'move-node-to-workspace D'
-    alt-shift-f = 'move-node-to-workspace F'
-    alt-shift-g = 'move-node-to-workspace G'
-    alt-shift-i = 'move-node-to-workspace I'
-    alt-shift-m = 'move-node-to-workspace M'
-    alt-shift-p = 'move-node-to-workspace P'
-    alt-shift-q = 'move-node-to-workspace Q'
-    alt-shift-r = 'move-node-to-workspace R'
-    alt-shift-t = 'move-node-to-workspace T'
-    alt-shift-u = 'move-node-to-workspace U'
-    alt-shift-v = 'move-node-to-workspace V'
-# alt-shift-w = 'move-node-to-workspace W'
-    alt-shift-x = 'move-node-to-workspace X'
-    alt-shift-y = 'move-node-to-workspace Y'
+#    alt-shift-b = 'move-node-to-workspace B'
+#    alt-shift-d = 'move-node-to-workspace D'
+#    alt-shift-f = 'move-node-to-workspace F'
+#    alt-shift-g = 'move-node-to-workspace G'
+#    alt-shift-i = 'move-node-to-workspace I'
+#    alt-shift-m = 'move-node-to-workspace M'
+#    alt-shift-p = 'move-node-to-workspace P'
+#    alt-shift-q = 'move-node-to-workspace Q'
+#    alt-shift-r = 'move-node-to-workspace R'
+#    alt-shift-t = 'move-node-to-workspace T'
+#    alt-shift-u = 'move-node-to-workspace U'
+#    alt-shift-v = 'move-node-to-workspace V'
+## alt-shift-w = 'move-node-to-workspace W'
+#    alt-shift-x = 'move-node-to-workspace X'
+#    alt-shift-y = 'move-node-to-workspace Y'
 
     # See: https://nikitabobko.github.io/AeroSpace/commands#workspace-back-and-forth
     alt-tab = 'workspace-back-and-forth'
@@ -202,40 +202,41 @@ automatically-unhide-macos-hidden-apps = false
 
 
 [[on-window-detected]]
-    if.app-id = 'com.tinyspeck.slackmacgap'
-    run = 'move-node-to-workspace M'
-
-[[on-window-detected]]
     if.app-id = 'com.apple.MobileSMS'
-    run = 'move-node-to-workspace M'
+    run = 'move-node-to-workspace 3'
 
 [[on-window-detected]]
     if.app-id = 'net.whatsapp.WhatsApp'
-    run = 'move-node-to-workspace M'
+    run = 'move-node-to-workspace 3'
 
 [[on-window-detected]]
     if.app-id = 'com.1password.1password'
-    run = 'move-node-to-workspace F'
+    run = 'move-node-to-workspace 9'
 
 [[on-window-detected]]
     if.app-id = 'com.apple.Preview'
-    run = 'move-node-to-workspace F'
+    run = 'move-node-to-workspace 9'
 
 [[on-window-detected]]
     if.app-id = 'com.apple.finder'
-    run = 'move-node-to-workspace F'
+    run = 'move-node-to-workspace 9'
 
 [[on-window-detected]]
     if.app-id = 'com.googlecode.iterm2'
-    run = 'move-node-to-workspace X'
+    run = 'move-node-to-workspace 1'
 
 [[on-window-detected]]
     if.app-id = 'com.github.wez.wezterm'
-    run = 'move-node-to-workspace X'
+    run = 'move-node-to-workspace 1'
+
+[[on-window-detected]]
+    if.app-id = 'com.mitchellh.ghostty'
+    run = 'move-node-to-workspace 1'
+
 
 [[on-window-detected]]
     if.app-id = 'com.todesktop.230331mzl4w4u92'
-    run = 'move-node-to-workspace X'
+    run = 'move-node-to-workspace 3'
 
 [[on-window-detected]]
     if.app-id = 'com.openai.chat'
@@ -243,12 +244,16 @@ automatically-unhide-macos-hidden-apps = false
 
 [[on-window-detected]]
     if.app-id = 'com.google.Chrome'
-    run = 'move-node-to-workspace B'
+    run = 'move-node-to-workspace 2'
+
+[[on-window-detected]]
+    if.app-id = 'iorg.mozilla.firefox'
+    run = 'move-node-to-workspace 2'
 
 [[on-window-detected]]
     if.app-id = 'com.apple.Safari'
-    run = 'move-node-to-workspace B'
+    run = 'move-node-to-workspace 2'
 
 [[on-window-detected]]
   if.app-id = 'company.thebrowser.Browser'
-  run = 'move-node-to-workspace B'
+  run = 'move-node-to-workspace 2'

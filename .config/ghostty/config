@@ -45,7 +45,7 @@
 theme = Rose Pine
 cursor-style = block
 font-family = CaskaydiaMono Nerd Font Mono
-font-size = 14
+font-size = 18
 cursor-color = #FF0000
 background-opacity= 0.95
 copy-on-select = true
