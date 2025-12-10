@@ -1,0 +1,7 @@
+[tools]
+gh = "latest"
+node = "latest"
+npm = "latest"
+ruby = "latest"
+"ubi:sst/opencode" = "1.0.150"
+yarn = "latest"
