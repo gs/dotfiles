@@ -1,7 +1,7 @@
 ---
 description: Product + UX (practical)
 mode: subagent
-model: opencode/gpt-5.1-codex-mini
+model: opencode/gpt-5.1
 temperature: 0.3
 tools:
   read: true

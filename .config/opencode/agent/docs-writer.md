@@ -1,7 +1,7 @@
 ---
 description: Writes and maintains project documentation
 mode: subagent
-model: opencode/gpt-5-nano
+model: opencode/claude-haiku-4-5
 tools:
   read: true
   write: true
