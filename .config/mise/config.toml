@@ -1,7 +1,13 @@
 [tools]
 gh = "latest"
+neovim = "latest"
 node = "latest"
 npm = "latest"
+opencode = "latest"
 ruby = "latest"
-"ubi:sst/opencode" = "1.0.150"
 yarn = "latest"
+
+[settings]
+
+[settings.ruby]
+compile = true

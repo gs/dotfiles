@@ -4,3 +4,5 @@
 .config/opencode/bun.lock
 .config/opencode/node_modules/
 .config/opencode/package.json
+.config/nvim/lazy-lock.json
+
