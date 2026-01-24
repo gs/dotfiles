@@ -1,7 +1,7 @@
 ---
 description: Code review (no edits)
 mode: subagent
-model: opencode/gpt-5.1-codex-mini
+model: ollama-cloud/devstral-small-2:24b
 temperature: 0.2
 tools:
   read: true

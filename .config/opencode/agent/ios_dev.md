@@ -1,7 +1,7 @@
 ---
 description: iOS developer (Swift)
 mode: subagent
-model: opencode/gpt-5.1-codex
+model: ollama-cloud/mistral-large-3:675b
 temperature: 0.2
 tools:
   read: true

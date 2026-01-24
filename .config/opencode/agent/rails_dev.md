@@ -1,7 +1,7 @@
 ---
 description: Rails developer (quality + cost)
 mode: subagent
-model: opencode/gpt-5.1-codex
+model: ollama-cloud/devstral-2:123b
 temperature: 0.2
 tools:
   read: true

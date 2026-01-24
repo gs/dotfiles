@@ -1,7 +1,7 @@
 ---
 description: Writes and maintains project documentation
 mode: subagent
-model: opencode/claude-haiku-4-5
+model: ollama-cloud/gemini-3-pro-preview
 tools:
   read: true
   write: true

@@ -1,7 +1,7 @@
 ---
 description: Product + UX (practical)
 mode: subagent
-model: opencode/gpt-5.1
+model: ollama-cloud/gemini-3-pro-preview
 temperature: 0.3
 tools:
   read: true
