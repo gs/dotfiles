@@ -13,28 +13,44 @@ vim.g.mapleader = ","
 vim.g.fugitive_default_split = 'edit'
 vim.opt.clipboard = "unnamedplus"
 
-vim.pack.add({
-	{ src = "https://github.com/stevearc/oil.nvim" },
-	{ src = "https://github.com/mason-org/mason.nvim" },
-	{ src = "https://github.com/mason-org/mason-lspconfig.nvim" },
-	{ src = "https://github.com/github/copilot.vim" },
-	{ src = "https://github.com/nvim-lua/plenary.nvim" },
-	{ src = "https://github.com/tpope/vim-rails" },
-	{ src = "https://github.com/nvim-treesitter/nvim-treesitter" },
-	{ src = "https://github.com/tpope/vim-fugitive" },
-	{ src = "https://github.com/rose-pine/neovim" },
-	{ src = "https://github.com/xiyaowong/transparent.nvim" },
-	{ src = 'https://github.com/neovim/nvim-lspconfig' },
-	{ src = "https://github.com/echasnovski/mini.nvim" },
-	{ src = "https://github.com/tpope/vim-sensible"},
-	{ src = "https://github.com/folke/trouble.nvim" },
-	{ src = "https://github.com/nvim-pack/nvim-spectre" },
-	{ src = "https://github.com/ThePrimeagen/harpoon" },
-	{ src = "https://github.com/nvim-neotest/neotest" },
-	{ src = "https://github.com/zidhuss/neotest-minitest" },
-	{ src = "https://github.com/nvim-neotest/nvim-nio" },
-	{ src = "https://github.com/christoomey/vim-tmux-navigator" },
-})
+-- Bootstrap mini.deps
+local path_package = vim.fn.stdpath('data') .. '/site/'
+local mini_path = path_package .. 'pack/deps/start/mini.nvim'
+if not vim.loop.fs_stat(mini_path) then
+  vim.cmd('echo "Installing mini.nvim"')
+  vim.fn.system({
+    'git', 'clone', '--filter=blob:none',
+    'https://github.com/echasnovski/mini.nvim', mini_path
+  })
+  vim.cmd('packadd mini.nvim')
+  vim.cmd('echo "Installed mini.nvim"')
+end
+
+-- Setup mini.deps
+require('mini.deps').setup({ path = { package = path_package } })
+
+local add = MiniDeps.add
+
+-- Add plugins
+add("stevearc/oil.nvim")
+add("mason-org/mason.nvim")
+add("mason-org/mason-lspconfig.nvim")
+add("github/copilot.vim")
+add("nvim-lua/plenary.nvim")
+add("tpope/vim-rails")
+add("nvim-treesitter/nvim-treesitter")
+add("tpope/vim-fugitive")
+add("rose-pine/neovim")
+add("xiyaowong/transparent.nvim")
+add("neovim/nvim-lspconfig")
+add("tpope/vim-sensible")
+add("folke/trouble.nvim")
+add("nvim-pack/nvim-spectre")
+add("ThePrimeagen/harpoon")
+add("nvim-neotest/neotest")
+add("zidhuss/neotest-minitest")
+add("nvim-neotest/nvim-nio")
+add("christoomey/vim-tmux-navigator")
 
 require "oil".setup()
 require "mason".setup()
@@ -120,5 +136,5 @@ vim.cmd([[hi statusline guibg=NONE]])
 
 
 vim.keymap.set('n', 'U', function()
-  vim.pack.update()
+  MiniDeps.update()
 end, { desc = 'Update plugins' })
