@@ -1,7 +1,7 @@
 ---
 description: Product + UX (practical)
 mode: subagent
-model: ollama-cloud/gemini-3-pro-preview
+model: ollama-cloud/gemma3:27b
 temperature: 0.3
 tools:
   read: true

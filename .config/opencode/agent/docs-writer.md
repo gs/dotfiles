@@ -1,7 +1,7 @@
 ---
 description: Writes and maintains project documentation
 mode: subagent
-model: ollama-cloud/gemini-3-pro-preview
+model: ollama-cloud/kimi-k2.5
 tools:
   read: true
   write: true

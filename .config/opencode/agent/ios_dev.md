@@ -1,7 +1,7 @@
 ---
 description: iOS developer (Swift)
 mode: subagent
-model: ollama-cloud/mistral-large-3:675b
+model: ollama-cloud/qwen3-coder:480b
 temperature: 0.2
 tools:
   read: true

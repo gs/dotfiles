@@ -1,11 +1,8 @@
 [tools]
 gh = "latest"
-neovim = "latest"
-node = "latest"
 npm = "latest"
 opencode = "latest"
 ruby = "latest"
-yarn = "latest"
 
 [settings]
 

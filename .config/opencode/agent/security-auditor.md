@@ -1,7 +1,7 @@
 ---
 description: Security audit (read-only)
 mode: subagent
-model: ollama-cloud/glm-4.7
+model: ollama-cloud/glm-5
 temperature: 0.1
 tools:
   read: true

@@ -1,7 +1,7 @@
 ---
 description: Code review (no edits)
 mode: subagent
-model: ollama-cloud/devstral-small-2:24b
+model: ollama-cloud/deepseek-v3.1:671b
 temperature: 0.2
 tools:
   read: true
