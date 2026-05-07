@@ -35,10 +35,8 @@ local add = MiniDeps.add
 add("stevearc/oil.nvim")
 add("mason-org/mason.nvim")
 add("mason-org/mason-lspconfig.nvim")
-add("github/copilot.vim")
 add("nvim-lua/plenary.nvim")
 add("tpope/vim-rails")
-add("nvim-treesitter/nvim-treesitter")
 add("tpope/vim-fugitive")
 add("rose-pine/neovim")
 add("xiyaowong/transparent.nvim")
@@ -51,16 +49,17 @@ add("nvim-neotest/neotest")
 add("zidhuss/neotest-minitest")
 add("nvim-neotest/nvim-nio")
 add("christoomey/vim-tmux-navigator")
+add("saghen/blink.nvim")
 
 require "oil".setup()
 require "mason".setup()
 require("mason-lspconfig").setup({
   ensure_installed = { "lua_ls", "ts_ls", "ruby_lsp" },
 })
-require("nvim-treesitter.configs").setup({
-  ensure_installed = { "lua", "ruby", "javascript" },
-  highlight = { enable = true },
-})
+--require("nvim-treesitter.configs").setup({
+--  ensure_installed = { "lua", "ruby", "javascript" },
+--  highlight = { enable = true },
+--})
 require "transparent".setup()
 require("mini.pick").setup({
   source = {
@@ -131,7 +130,7 @@ vim.keymap.set("n", "<leader>ts", require("neotest").run.stop)
 vim.keymap.set("n", "<leader>to", require("neotest").output_panel.toggle)
 vim.keymap.set("n", ";", ":")
 
-vim.cmd([[colorscheme rose-pine]])
+vim.cmd([[colorscheme rose-pine-moon]])
 vim.cmd([[hi statusline guibg=NONE]])
 
 
