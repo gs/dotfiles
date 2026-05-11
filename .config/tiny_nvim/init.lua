@@ -12,6 +12,10 @@ vim.opt.mouse = ""
 vim.g.mapleader = ","
 vim.g.fugitive_default_split = 'edit'
 vim.opt.clipboard = "unnamedplus"
+vim.opt.timeoutlen = 250
+vim.opt.ttimeoutlen = 10
+vim.opt.updatetime = 150
+vim.opt.completeopt = { "menuone", "noselect", "fuzzy" }
 
 -- Bootstrap mini.deps
 local path_package = vim.fn.stdpath('data') .. '/site/'
@@ -71,10 +75,27 @@ require("mini.pick").setup({
     pick = { float = true },
     preview = { float = true },
   },
+  mappings = {
+    choose_in_vsplit = "<C-q>",
+    paste = "<C-v>",
+  },
 })
 require "trouble".setup()
 require "spectre".setup()
 require "harpoon".setup()
+pcall(vim.cmd, "packadd vim-fugitive")
+pcall(vim.cmd, "packadd nvim-nio")
+vim.api.nvim_create_user_command("G", function(opts)
+  local args = opts.args == "" and "" or " " .. opts.args
+  local cmd = vim.fn["fugitive#Command"](-1, -1, 0, opts.bang and 1 or 0, "", "++curwin" .. args)
+  vim.cmd(cmd == "" and "exe" or cmd)
+end, {
+  bang = true,
+  nargs = "*",
+  complete = function(arglead, cmdline, cursorpos)
+    return vim.fn["fugitive#Complete"](arglead, cmdline, cursorpos)
+  end,
+})
 require("neotest").setup({
   adapters = {
     require("neotest-minitest"),
@@ -89,11 +110,87 @@ require("neotest").setup({
 require "mini.ai".setup()
 require "mini.align".setup()
 require "mini.comment".setup()
-require "mini.completion".setup()
+local snippets = require("mini.snippets")
+local gen_loader = snippets.gen_loader
+local snippet_match_strict = function(snips)
+  return snippets.default_match(snips, { pattern_fuzzy = "%S+" })
+end
+snippets.setup({
+  snippets = {
+    gen_loader.from_file("~/.config/nvim/snippets/global.json"),
+    gen_loader.from_lang(),
+  },
+  mappings = { expand = "", jump_next = "", jump_prev = "" },
+  expand = { match = snippet_match_strict },
+})
+local completion = require("mini.completion")
+local completion_process_items = function(items, base)
+  return completion.default_process_items(items, base, { filtersort = "fuzzy" })
+end
+completion.setup({
+  delay = { completion = 100, info = 100, signature = 50 },
+  lsp_completion = { process_items = completion_process_items },
+})
+
+local termcodes = function(keys)
+  return vim.api.nvim_replace_termcodes(keys, true, true, true)
+end
+
+local has_words_before = function()
+  local line, col = unpack(vim.api.nvim_win_get_cursor(0))
+  if col == 0 then return false end
+  local text_before_cursor = vim.api.nvim_buf_get_lines(0, line - 1, line, true)[1]:sub(col, col)
+  return not text_before_cursor:match("%s")
+end
+
+_G.cr_action = function()
+  if vim.fn.complete_info()["selected"] ~= -1 then return "\25" end
+  return "\r"
+end
+
+_G.tab_action = function()
+  if vim.fn.pumvisible() == 1 then return "\14" end
+  if _G.MiniSnippets ~= nil then
+    if #MiniSnippets.expand({ insert = false }) > 0 then
+      vim.schedule(MiniSnippets.expand)
+      return ""
+    end
+    if MiniSnippets.session.get() ~= nil then
+      MiniSnippets.session.jump("next")
+      return ""
+    end
+  end
+  if vim.snippet ~= nil and vim.snippet.active({ direction = 1 }) then
+    vim.snippet.jump(1)
+    return ""
+  end
+  if has_words_before() then
+    MiniCompletion.complete_twostage()
+    return ""
+  end
+  return "\t"
+end
+
+_G.s_tab_action = function()
+  if vim.fn.pumvisible() == 1 then return "\16" end
+  if _G.MiniSnippets ~= nil and MiniSnippets.session.get() ~= nil then
+    MiniSnippets.session.jump("prev")
+    return ""
+  end
+  if vim.fn.complete_info()["selected"] ~= -1 then return "\25" end
+  if vim.snippet ~= nil and vim.snippet.active({ direction = -1 }) then
+    vim.snippet.jump(-1)
+    return ""
+  end
+  return termcodes("<S-Tab>")
+end
+
+vim.keymap.set("i", "<CR>", "v:lua.cr_action()", { expr = true })
+vim.keymap.set({ "i", "s" }, "<Tab>", "v:lua.tab_action()", { expr = true })
+vim.keymap.set({ "i", "s" }, "<S-Tab>", "v:lua.s_tab_action()", { expr = true })
 require "mini.move".setup()
 require "mini.operators".setup()
 require "mini.pairs".setup()
-require "mini.snippets".setup()
 require "mini.surround".setup()
 require "mini.basics".setup()
 require "mini.bracketed".setup()
@@ -105,6 +202,22 @@ require "mini.sessions".setup()
 require "mini.indentscope".setup()
 require "mini.trailspace".setup()
 
+local paste_orig = vim.paste
+vim.paste = function(lines, phase)
+  if not MiniPick.is_picker_active() then return paste_orig(lines, phase) end
+  if phase ~= -1 and phase ~= 1 then return end
+
+  local pasted = type(lines) == "table" and table.concat(lines, " ") or tostring(lines)
+  pasted = pasted:gsub("[\n\t]", " ")
+  local query = MiniPick.get_picker_query()
+  table.insert(query, pasted)
+  MiniPick.set_picker_query(query)
+end
+
+local pick_grep_cword = function()
+  require("mini.pick").builtin.grep({ pattern = vim.fn.expand("<cword>") })
+end
+
 
 vim.keymap.set("n", "<leader>f", ":Pick files<CR>")
 vim.keymap.set("n", "<leader>b", ":Pick buffers<CR>")
@@ -115,7 +228,7 @@ vim.keymap.set("n", "<leader>e", ":Oil<CR> ")
 vim.keymap.set("n", "<leader>E", ":e ~/.config/nvim/init.lua<CR> ")
 
 vim.keymap.set("n", "<leader>lf", vim.lsp.buf.format)
-vim.keymap.set("n", "<leader>S", '<cmd>lua require("spectre").open()<cr>')
+vim.keymap.set("n", "<leader>S", pick_grep_cword)
 vim.keymap.set("n", "<leader>xx", "<cmd>Trouble diagnostics toggle<cr>")
 vim.keymap.set("n", "gd", vim.lsp.buf.definition)
 vim.keymap.set("n", "gD", vim.lsp.buf.declaration)
