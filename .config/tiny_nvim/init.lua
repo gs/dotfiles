@@ -55,6 +55,7 @@ add("zidhuss/neotest-minitest")
 add("nvim-neotest/nvim-nio")
 add("christoomey/vim-tmux-navigator")
 add("saghen/blink.nvim")
+add("carderne/pi-nvim")
 
 require "oil".setup()
 require "mason".setup()
@@ -202,6 +203,8 @@ require "mini.sessions".setup()
 require "mini.indentscope".setup()
 require "mini.trailspace".setup()
 
+require("pi-nvim").setup()
+
 local paste_orig = vim.paste
 vim.paste = function(lines, phase)
   if not MiniPick.is_picker_active() then return paste_orig(lines, phase) end
@@ -246,6 +249,10 @@ vim.keymap.set("n", "<leader>tt", require("neotest").run.run)
 vim.keymap.set("n", "<leader>tf", function() require("neotest").run.run(vim.fn.expand("%")) end)
 vim.keymap.set("n", "<leader>ts", require("neotest").run.stop)
 vim.keymap.set("n", "<leader>to", require("neotest").output_panel.toggle)
+vim.keymap.set("n", "<leader>pp", ":PiSend<CR>")
+vim.keymap.set("n", "<leader>pf", ":PiSendFile<CR>")
+vim.keymap.set("v", "<leader>ps", ":PiSendSelection<CR>")
+vim.keymap.set("n", "<leader>pb", ":PiSendBuffer<CR>")
 vim.keymap.set("n", ";", ":")
 
 vim.cmd([[colorscheme rose-pine-moon]])
