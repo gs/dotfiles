@@ -6,3 +6,51 @@
 .config/opencode/package.json
 .config/nvim/lazy-lock.json
 
+# --- Hyprland: upstream framework (reinstall per machine, don't track) ---
+# JaKooLit Hyprland-Dots framework files. These are provided by the framework
+# installer on each machine; only your overrides (custom/, UserConfigs/) are yours.
+.config/hypr/configs/
+.config/hypr/scripts/
+.config/hypr/UserScripts/
+.config/hypr/wallust/
+.config/hypr/animations/
+.config/hypr/initial-boot.sh
+.config/hypr/application-style.conf
+
+# --- Hyprland: machine-specific (per physical host, regenerate — never share) ---
+.config/hypr/monitors.conf
+.config/hypr/Monitor_Profiles/
+.config/hypr/workspaces.conf
+.config/hypr/hyprlock-1080p.conf
+.config/hypr/hyprlock-2k.conf
+.config/hypr/bin/Refresh.sh
+.config/hypr/bin/RefreshNoWaybar.sh
+
+# --- Waybar: upstream JaKooLit framework (reinstall per machine) ---
+.config/waybar/Modules
+.config/waybar/ModulesCustom
+.config/waybar/ModulesGroups
+.config/waybar/ModulesVertical
+.config/waybar/ModulesWorkspaces
+.config/waybar/UserModules
+.config/waybar/configs/
+.config/waybar/style/
+.config/waybar/wallust/
+
+# --- SECRETS: never commit these (guards against accidental `git add -A`) ---
+# SSH private keys / client config / known hosts
+.ssh/
+**/id_*
+!**/id_*.pub
+*.pem
+*_pkey
+# Credential-bearing app configs
+.config/gh/hosts.yml
+.config/rclone/
+.config/stripe/
+.config/ngrok/
+.config/github-copilot/
+.config/Nextcloud/
+.config/herdr/
+.netrc
+

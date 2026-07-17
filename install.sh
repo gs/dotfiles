@@ -100,4 +100,23 @@ if [ -d "$DOTFILES_DIR/bin" ]; then
     fi
 fi
 
+# --- Optional: restore SSH private keys from the encrypted bundle ---
+# Private keys are NOT in this (public) repo. They live encrypted as
+# .ssh/keys.tar.gz.gpg inside the *private* dotfiles repo. The bundle
+# passphrase is stored in Nextcloud Passwords.
+# Runs only interactively (skipped in devcontainers/CI where there's no TTY).
+if [ -t 0 ]; then
+    for priv in "$HOME/code/dotfiles-private" "$HOME/dotfiles-private"; do
+        if [ -x "$priv/decrypt-keys.sh" ] && [ -f "$priv/.ssh/keys.tar.gz.gpg" ]; then
+            printf "Restore SSH keys from encrypted bundle in %s? (passphrase is in Nextcloud Passwords) [y/N] " "$priv"
+            read -r restore_ans || restore_ans=""
+            case "$restore_ans" in
+                [Yy]*) "$priv/decrypt-keys.sh" || echo "SSH key restore failed; run $priv/decrypt-keys.sh manually." ;;
+                *)     echo "Skipping SSH key restore." ;;
+            esac
+            break
+        fi
+    done
+fi
+
 echo "Dotfiles installation complete!"
