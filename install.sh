@@ -4,8 +4,12 @@
 
 set -e
 
-DOTFILES_DIR="$HOME/dotfiles"
+# Auto-detect the dotfiles location from this script's own path, so it works
+# whether cloned at ~/dotfiles (devcontainer) or ~/code/dotfiles (workstation).
+DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 CONFIG_DIR="$HOME/.config"
+# Private dotfiles (ssh config + encrypted key bundle). Override with PRIVATE_DIR.
+PRIVATE_DIR="${PRIVATE_DIR:-$(cd "$DOTFILES_DIR/.." && pwd)/dotfiles-private}"
 
 echo "Installing dotfiles from $DOTFILES_DIR..."
 
@@ -100,23 +104,32 @@ if [ -d "$DOTFILES_DIR/bin" ]; then
     fi
 fi
 
-# --- Optional: restore SSH private keys from the encrypted bundle ---
-# Private keys are NOT in this (public) repo. They live encrypted as
-# .ssh/keys.tar.gz.gpg inside the *private* dotfiles repo. The bundle
-# passphrase is stored in Nextcloud Passwords.
-# Runs only interactively (skipped in devcontainers/CI where there's no TTY).
-if [ -t 0 ]; then
-    for priv in "$HOME/code/dotfiles-private" "$HOME/dotfiles-private"; do
-        if [ -x "$priv/decrypt-keys.sh" ] && [ -f "$priv/.ssh/keys.tar.gz.gpg" ]; then
-            printf "Restore SSH keys from encrypted bundle in %s? (passphrase is in Nextcloud Passwords) [y/N] " "$priv"
-            read -r restore_ans || restore_ans=""
-            case "$restore_ans" in
-                [Yy]*) "$priv/decrypt-keys.sh" || echo "SSH key restore failed; run $priv/decrypt-keys.sh manually." ;;
-                *)     echo "Skipping SSH key restore." ;;
-            esac
-            break
+# --- Private dotfiles: SSH config + private keys ---
+# Private material is NOT in this (public) repo. It lives in the private repo:
+#   .ssh/config              -> symlinked into ~/.ssh/config
+#   .ssh/keys.tar.gz.gpg     -> AES-256 bundle; passphrase is in Nextcloud Passwords
+if [ -d "$PRIVATE_DIR" ]; then
+    # SSH config (safe, no secrets) — symlink it in
+    if [ -f "$PRIVATE_DIR/.ssh/config" ]; then
+        mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+        if [ ! -e "$HOME/.ssh/config" ]; then
+            echo "Symlinking ~/.ssh/config from private dotfiles..."
+            ln -sf "$PRIVATE_DIR/.ssh/config" "$HOME/.ssh/config"
+        else
+            echo "Skipping ~/.ssh/config (already exists)..."
         fi
-    done
+    fi
+    # Private keys — restore from the encrypted bundle, only interactively
+    if [ -t 0 ] && [ -x "$PRIVATE_DIR/decrypt-keys.sh" ] && [ -f "$PRIVATE_DIR/.ssh/keys.tar.gz.gpg" ]; then
+        printf "Restore SSH keys from encrypted bundle? (passphrase is in Nextcloud Passwords) [y/N] "
+        read -r restore_ans || restore_ans=""
+        case "$restore_ans" in
+            [Yy]*) "$PRIVATE_DIR/decrypt-keys.sh" || echo "SSH key restore failed; run $PRIVATE_DIR/decrypt-keys.sh manually." ;;
+            *)     echo "Skipping SSH key restore." ;;
+        esac
+    fi
+else
+    echo "Private dotfiles not found at $PRIVATE_DIR (skipping ssh config + keys)."
 fi
 
 echo "Dotfiles installation complete!"
