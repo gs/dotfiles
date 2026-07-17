@@ -1,7 +1,7 @@
 ---
 description: Feature planning & architecture (decision-maker)
 mode: subagent
-model: ollama-cloud/cogito-2.1:671b
+model: ollama-cloud/nemotron-3-ultra
 temperature: 0.1
 tools:
   read: true

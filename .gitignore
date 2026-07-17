@@ -54,3 +54,6 @@
 .config/herdr/
 .netrc
 
+
+# opencode build artifacts (zipped copies of tracked dirs)
+.config/opencode/*.zip

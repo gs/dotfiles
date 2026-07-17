@@ -7,7 +7,7 @@ return {
         endpoint = "https://ollama.com", -- IMPORTANT: no /api
         -- model = "gpt-oss:120b", -- put your cloud model id here
         model = "kimi-k2.5", -- put your cloud model id here
-        api_key_name = "21f48a18eadc4f3bace9c557096b0597.52a4zxzpBXhzEpdqe9fbDO0V",
+        api_key_name = "OLLAMA_API_KEY",
 
         -- Enable provider when the env var exists
         is_env_set = function()

@@ -1,7 +1,7 @@
 ---
 description: Rails developer (quality + cost)
 mode: subagent
-model: ollama-cloud/devstral-2:123b
+model: ollama-cloud/glm-5.2
 temperature: 0.2
 tools:
   read: true

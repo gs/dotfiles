@@ -73,7 +73,7 @@
 	email = gs@deliverists.io
 [credential "https://github.com"]
 	helper = 
-	helper = !/home/gs/.local/share/mise/installs/gh/2.88.1/gh_2.88.1_linux_arm64/bin/gh auth git-credential
+	helper = !/home/gs/.local/share/mise/shims/gh auth git-credential
 [credential "https://gist.github.com"]
 	helper = 
-	helper = !/home/gs/.local/share/mise/installs/gh/2.88.1/gh_2.88.1_linux_arm64/bin/gh auth git-credential
+	helper = !/home/gs/.local/share/mise/shims/gh auth git-credential

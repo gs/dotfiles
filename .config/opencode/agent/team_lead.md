@@ -1,7 +1,7 @@
 ---
 description: Team lead - orchestrates feature development workflow
 mode: all
-model: ollama-cloud/kimi-k2-thinking
+model: ollama-cloud/kimi-k2.6
 temperature: 0.2
 tools:
   read: true

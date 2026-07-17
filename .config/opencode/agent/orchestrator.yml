@@ -1,7 +1,7 @@
 ---
 description: Orchestrator / dispatcher (no reasoning)
 mode: main
-model: ollama-cloud/kimi-k2-thinking
+model: ollama-cloud/minimax-m3
 temperature: 0
 ---
 
