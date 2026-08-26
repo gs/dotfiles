@@ -9,7 +9,7 @@
 [core]
   editor=nvim
   # sshCommand = ssh -i ~/.ssh/office_deliverists
-  sshCommand = ssh -i ~/.ssh/gs_deliveristsio
+  # sshCommand = ssh -i ~/.ssh/gs_deliveristsio
 
 [merge]
   summary=false
@@ -70,7 +70,11 @@
   trust = "!mkdir -p .git/safe"
 [user]
 	name = gs
-	email = gs@deliverists.io
+	email = grzegorz@smajdor.pl
+
+[includeIf "gitdir:~/code/deliverists.io/"]
+	path = ~/.gitconfig-deliverists
+
 [credential "https://github.com"]
 	helper = 
 	helper = !/home/gs/.local/share/mise/shims/gh auth git-credential
