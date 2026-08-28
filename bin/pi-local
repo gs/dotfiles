@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# Self-sufficient local-model launcher for Pi, using llama.cpp's router mode.
+#
+# On a fresh box this bootstraps everything it needs (mise, llama.cpp, pi,
+# llmfit, and a starter model), then on every run: starts (or reuses) a
+# llama.cpp router server and hands off to pi. Pi drives model discovery,
+# loading, and unloading itself via `/llama` and `/model` — there's no
+# context-probing loop or config file to hand-maintain here, unlike
+# opencode's setup in bin/oc. `llmfit download <model>` is still the only
+# thing you ever do by hand.
+set -euo pipefail
+
+PORT=8082
+MODELS_DIR="$HOME/.cache/llmfit/models"
+LOG="$HOME/.cache/llmfit/llama-router.log"
+
+step() {
+  echo "▸ $*"
+}
+
+# --- Bootstrap: mise -------------------------------------------------------
+if ! command -v mise &>/dev/null; then
+  step "Installing mise"
+  if command -v curl &>/dev/null; then
+    curl https://mise.run | sh
+    export PATH="$HOME/.local/bin:$PATH"
+  elif command -v pacman &>/dev/null; then
+    sudo pacman -S --noconfirm mise
+  elif command -v brew &>/dev/null; then
+    brew install mise
+  else
+    echo "Could not install mise automatically: https://mise.jdx.dev/installing-mise.html" >&2
+    exit 1
+  fi
+fi
+
+# --- Bootstrap: llama.cpp + pi via mise (global, so it's available in
+# every shell, not just this script) -----------------------------------------
+if ! mise which llama-server &>/dev/null || ! mise which pi &>/dev/null; then
+  step "Installing llama.cpp + pi via mise"
+  mise use --global "llama.cpp@latest" pi@latest
+  mise install
+fi
+
+LLAMA_SERVER="$(mise which llama-server)"
+PI_BIN="$(mise which pi)"
+
+# --- Bootstrap: llmfit -------------------------------------------------------
+if ! command -v llmfit &>/dev/null; then
+  step "Installing llmfit"
+  curl -fsSL https://llmfit.axjns.dev/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# --- Bootstrap: at least one model ------------------------------------------
+# llmfit nests downloads under a <namespace>/<file>.gguf subdirectory, so
+# this (and router discovery below) must search recursively, not just top-level.
+mkdir -p "$MODELS_DIR"
+if [ -z "$(find "$MODELS_DIR" -name '*.gguf' -print -quit 2>/dev/null)" ]; then
+  step "No local models yet — picking one that fits this machine"
+  PICKS=$(llmfit recommend --use-case coding --min-fit good \
+    --force-runtime llamacpp --capability tool_use -n 5 --json | \
+    python3 -c "import json,sys; print('\n'.join(m['name'] for m in json.load(sys.stdin)['models']))")
+  DOWNLOADED=0
+  while IFS= read -r PICK; do
+    [ -z "$PICK" ] && continue
+    # The recommender doesn't guarantee every hit actually ships a GGUF
+    # (e.g. AutoRound-only or plain fp16 repos) — retry with the common
+    # "<repo>-GGUF" HuggingFace naming convention before giving up on this
+    # candidate and moving to the next one, instead of failing the whole run.
+    for CANDIDATE in "$PICK" "${PICK}-GGUF"; do
+      step "Downloading $CANDIDATE"
+      if llmfit download "$CANDIDATE"; then
+        DOWNLOADED=1
+        break 2
+      fi
+      echo "  ... no usable GGUF for $CANDIDATE" >&2
+    done
+  done <<< "$PICKS"
+  if [ "$DOWNLOADED" -ne 1 ]; then
+    echo "Could not download any recommended model — try 'llmfit download <model>' manually." >&2
+    exit 1
+  fi
+fi
+
+# --- Start (or reuse) the router ---------------------------------------------
+# The router discovers every GGUF under MODELS_DIR and loads/unloads models
+# on demand; pi's /llama and /model commands drive that directly. Per pi's
+# own docs the router may be shared across multiple clients/sessions, so if
+# one is already up on our port (started by an earlier run of this script,
+# or manually), reuse it instead of restarting — and only tear down the one
+# *this* run started, not one we merely found running.
+STARTED_ROUTER=0
+if ! curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/health"; then
+  step "Starting llama.cpp router on port ${PORT}"
+  "$LLAMA_SERVER" \
+    --models-dir "$MODELS_DIR" \
+    --jinja \
+    --host 127.0.0.1 \
+    --port "$PORT" \
+    -ngl 999 \
+    -c 32768 \
+    > "$LOG" 2>&1 &
+  LLAMA_PID=$!
+  STARTED_ROUTER=1
+
+  UP=0
+  for _ in $(seq 1 60); do
+    curl -s -o /dev/null -m 2 "http://127.0.0.1:${PORT}/health" && { UP=1; break; }
+    kill -0 "$LLAMA_PID" 2>/dev/null || break
+    sleep 0.5
+  done
+  if [ "$UP" -ne 1 ]; then
+    echo "Router didn't come up — check $LOG" >&2
+    exit 1
+  fi
+else
+  step "Reusing router already running on port ${PORT}"
+fi
+
+# Not exec'd: the script has to stay alive after pi exits so the EXIT trap
+# below actually runs and stops the router — but only the router we started.
+if [ "$STARTED_ROUTER" -eq 1 ]; then
+  trap 'kill "$LLAMA_PID" 2>/dev/null' EXIT INT TERM
+fi
+
+# --- One-time login hint -----------------------------------------------------
+# LLAMA_BASE_URL alone does not reliably register the llama.cpp provider with
+# pi (confirmed: --provider/--model on the CLI errors "Unknown provider" and
+# --list-models shows nothing until a real /login has happened at least
+# once — this is a pi 0.84.3 quirk, not something fixable from outside it).
+# `/login llama.cpp` persists a credential to ~/.pi/agent/auth.json; after
+# that one-time step, LLAMA_BASE_URL and normal model selection work on every
+# future run. Only nag about it if that credential doesn't exist yet.
+AUTH_FILE="$HOME/.pi/agent/auth.json"
+if ! python3 -c "import json,sys; sys.exit(0 if 'llama.cpp' in json.load(open(sys.argv[1])) else 1)" "$AUTH_FILE" 2>/dev/null; then
+  step "First run: inside pi, type '/login llama.cpp' and enter http://127.0.0.1:${PORT} when asked for the router URL, then '/llama' to load a model and '/model' to select it. This is a one-time step."
+fi
+
+export LLAMA_BASE_URL="http://127.0.0.1:${PORT}"
+"$PI_BIN" "$@"

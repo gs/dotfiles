@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+# Self-sufficient local-model launcher for OpenCode.
+#
+# On a fresh box this bootstraps everything it needs (mise, llama.cpp,
+# opencode, llmfit, and a starter model), then on every run: lets you pick
+# a downloaded GGUF (fzf), starts llama-server for it, points opencode.json
+# at it, and hands off to opencode. No systemd service, no manual steps —
+# `llmfit download <model>` is the only thing you ever do by hand.
+set -euo pipefail
+
+PORT=8081
+MODELS_DIR="$HOME/.cache/llmfit/models"
+CONFIG="$HOME/.config/opencode/opencode.json"
+LOG="$HOME/.cache/llmfit/llama-server.log"
+
+step() {
+  echo "▸ $*"
+}
+
+# --- Bootstrap: mise -------------------------------------------------------
+if ! command -v mise &>/dev/null; then
+  step "Installing mise"
+  if command -v curl &>/dev/null; then
+    curl https://mise.run | sh
+    export PATH="$HOME/.local/bin:$PATH"
+  elif command -v pacman &>/dev/null; then
+    sudo pacman -S --noconfirm mise
+  elif command -v brew &>/dev/null; then
+    brew install mise
+  else
+    echo "Could not install mise automatically: https://mise.jdx.dev/installing-mise.html" >&2
+    exit 1
+  fi
+fi
+
+# --- Bootstrap: llama.cpp + opencode via mise (global, so it's available in
+# every shell, not just this script) -----------------------------------------
+if ! mise which llama-server &>/dev/null || ! mise which opencode &>/dev/null; then
+  step "Installing llama.cpp + opencode via mise"
+  mise use --global "llama.cpp@latest" opencode@latest
+  mise install
+fi
+
+LLAMA_SERVER="$(mise which llama-server)"
+OPENCODE_BIN="$(mise which opencode)"
+
+# --- Bootstrap: llmfit -------------------------------------------------------
+if ! command -v llmfit &>/dev/null; then
+  step "Installing llmfit"
+  curl -fsSL https://llmfit.axjns.dev/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# --- Bootstrap: at least one model ------------------------------------------
+# llmfit nests downloads under a <namespace>/<file>.gguf subdirectory, so
+# this (and the listing below) must search recursively, not just top-level.
+mkdir -p "$MODELS_DIR"
+if [ -z "$(find "$MODELS_DIR" -name '*.gguf' -print -quit 2>/dev/null)" ]; then
+  step "No local models yet — picking one that fits this machine"
+  PICKS=$(llmfit recommend --use-case coding --min-fit good \
+    --force-runtime llamacpp --capability tool_use -n 5 --json | \
+    python3 -c "import json,sys; print('\n'.join(m['name'] for m in json.load(sys.stdin)['models']))")
+  DOWNLOADED=0
+  while IFS= read -r PICK; do
+    [ -z "$PICK" ] && continue
+    # The recommender doesn't guarantee every hit actually ships a GGUF
+    # (e.g. AutoRound-only or plain fp16 repos) — retry with the common
+    # "<repo>-GGUF" HuggingFace naming convention before giving up on this
+    # candidate and moving to the next one, instead of failing the whole run.
+    for CANDIDATE in "$PICK" "${PICK}-GGUF"; do
+      step "Downloading $CANDIDATE"
+      if llmfit download "$CANDIDATE"; then
+        DOWNLOADED=1
+        break 2
+      fi
+      echo "  ... no usable GGUF for $CANDIDATE" >&2
+    done
+  done <<< "$PICKS"
+  if [ "$DOWNLOADED" -ne 1 ]; then
+    echo "Could not download any recommended model — try 'llmfit download <model>' manually." >&2
+    exit 1
+  fi
+fi
+
+# --- Pick a model for this run -----------------------------------------------
+mapfile -t MODELS < <(find "$MODELS_DIR" -name '*.gguf' | sort)
+
+if [ ${#MODELS[@]} -eq 1 ]; then
+  SELECTED="${MODELS[0]}"
+else
+  SELECTED_REL=$(for m in "${MODELS[@]}"; do realpath --relative-to="$MODELS_DIR" "$m"; done | \
+    fzf --prompt="Model> " --height=40% --reverse)
+  SELECTED="${MODELS_DIR}/${SELECTED_REL}"
+fi
+
+if [ -z "${SELECTED:-}" ]; then
+  echo "No model selected." >&2
+  exit 1
+fi
+
+# --- Load it (as a child of this script, not a detached/background service —
+# it starts here and is killed the moment this script exits, however it exits) -
+#
+# A large -c pre-allocates a KV cache sized for it; on memory-constrained
+# boxes (e.g. unified-memory ARM machines) that cache plus the compute
+# buffers a real prompt needs can exceed available RAM — the process doesn't
+# fail to start, it loads fine, opencode comes up, then swap balloons and it
+# gets OOM-killed mid-session. Probe each candidate with a realistic-sized
+# request before trusting it, and back off to a smaller context instead of
+# committing to a size that only fails once opencode is already running.
+LLAMA_PID=""
+CTX_SIZE=""
+for CTX in 65536 32768 16384 8192 4096; do
+  pkill -f "llama-server.*--port ${PORT}" 2>/dev/null || true
+  sleep 0.5
+
+  step "Loading $(basename "$SELECTED") (context: ${CTX})"
+  "$LLAMA_SERVER" -m "$SELECTED" --port "$PORT" -ngl -1 -c "$CTX" -np 1 \
+    > "$LOG" 2>&1 &
+  LLAMA_PID=$!
+  trap 'kill "$LLAMA_PID" 2>/dev/null' EXIT INT TERM
+
+  UP=0
+  for _ in $(seq 1 60); do
+    curl -s -o /dev/null "http://127.0.0.1:${PORT}/v1/models" && { UP=1; break; }
+    kill -0 "$LLAMA_PID" 2>/dev/null || break
+    sleep 0.5
+  done
+  [ "$UP" -eq 1 ] || { echo "  ... didn't come up at context ${CTX}, trying smaller" >&2; continue; }
+
+  # Pipe, don't pass via argv/var — large contexts exceed the 128KB execve() arg cap.
+  CTX="$CTX" python3 -c "
+import json, os
+prompt = 'probe word ' * (int(os.environ['CTX']) // 4)
+print(json.dumps({'messages': [{'role': 'user', 'content': prompt}], 'max_tokens': 1}))
+" | curl -s -o /dev/null --max-time 120 "http://127.0.0.1:${PORT}/v1/chat/completions" \
+    -H 'Content-Type: application/json' \
+    --data-binary @- \
+    || true
+
+  if kill -0 "$LLAMA_PID" 2>/dev/null; then
+    CTX_SIZE="$CTX"
+    break
+  fi
+  echo "  ... llama-server didn't survive a full-context request at ${CTX}, trying smaller" >&2
+done
+
+if [ -z "$CTX_SIZE" ]; then
+  echo "llama-server couldn't stay up even at the smallest context (4096) — check $LOG" >&2
+  exit 1
+fi
+
+# llama-server also caps -c to the model's own training context (see "the
+# slot context ... exceeds the training context ... - capping" in the log)
+# — read back what it actually granted via /props rather than trusting our
+# request, or opencode will advertise headroom the model can't back.
+for _ in $(seq 1 20); do
+  PROPS_CTX="$(curl -s "http://127.0.0.1:${PORT}/props" | \
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["default_generation_settings"]["n_ctx"])' \
+    2>/dev/null || true)"
+  [ -n "$PROPS_CTX" ] && { CTX_SIZE="$PROPS_CTX"; break; }
+  sleep 0.3
+done
+
+mkdir -p "$(dirname "$CONFIG")"
+[ -f "$CONFIG" ] || echo '{"$schema": "https://opencode.ai/config.json"}' > "$CONFIG"
+
+python3 - "$CONFIG" "$SELECTED" "$CTX_SIZE" <<'PYEOF'
+import json, sys
+
+config_path, model_path, ctx_size = sys.argv[1], sys.argv[2], int(sys.argv[3])
+model_id = model_path.split("/")[-1]
+
+with open(config_path) as f:
+    config = json.load(f)
+
+config.setdefault("provider", {})["llama-cpp"] = {
+    "npm": "@ai-sdk/openai-compatible",
+    "name": "llama-server (local)",
+    "options": {"baseURL": "http://127.0.0.1:8081/v1"},
+    "models": {
+        model_id: {
+            "name": model_id,
+            # opencode can't probe a custom provider's context size itself,
+            # so it must be told explicitly or it silently falls back to a
+            # tiny default — this is what llama-server actually granted.
+            "limit": {"context": ctx_size, "output": min(ctx_size, 8192)},
+        }
+    },
+}
+config["model"] = f"llama-cpp/{model_id}"
+
+with open(config_path, "w") as f:
+    json.dump(config, f, indent=2)
+    f.write("\n")
+PYEOF
+
+# Not exec'd: the script has to stay alive after opencode exits so the EXIT
+# trap above actually runs and stops llama-server.
+"$OPENCODE_BIN" "$@"
