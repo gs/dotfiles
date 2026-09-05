@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Wrapper around /usr/bin/wf-recorder for Apple Silicon.
+#
+# Omarchy falls back to wf-recorder here because gpu-screen-recorder cannot
+# initialise on the Asahi GPU, and there is no hardware H.264 encoder at all
+# (VAAPI fails to initialise). That leaves libx264 on the CPU.
+#
+# Measured on this M1 (8 cores, synthetic source):
+#   3826x2120@60 veryfast  -> 1.03x realtime   <- wf-recorder's default; no headroom
+#   3826x2120@60 ultrafast -> 2.35x realtime
+#   3826x2120@30 ultrafast -> 5.11x realtime
+#
+# At 1.03x any load spike drops frames. wf-recorder then timestamps the frames
+# it did keep consecutively, so the video ends up shorter than the audio and
+# plays back jumpy -- a 15.8s recording produced 14.1s of video (11% missing).
+#
+# Defaults below trade a little compression efficiency for headroom. Override
+# per-run with env vars, e.g.:
+#   WFR_PRESET=veryfast WFR_FRAMERATE=30 omarchy screenrecord --fullscreen
+#   WFR_DISABLE=1 ...   # bypass this wrapper entirely
+
+REAL=/usr/bin/wf-recorder
+[[ -n ${WFR_DISABLE:-} ]] && exec -a wf-recorder "$REAL" "$@"
+
+PRESET="${WFR_PRESET:-ultrafast}"
+CRF="${WFR_CRF:-23}"
+RATE="${WFR_RATE:-48000}"
+
+args=()
+have_param=0
+have_rate=0
+i=0
+argv=("$@")
+while (( i < ${#argv[@]} )); do
+  a="${argv[$i]}"
+  case "$a" in
+    -p|--codec-param) have_param=1; args+=("$a" "${argv[$((i+1))]}"); ((i+=2)); continue ;;
+    -R|--sample-rate) have_rate=1 ;;
+    -r|--framerate)
+      if [[ -n ${WFR_FRAMERATE:-} ]]; then
+        args+=("$a" "$WFR_FRAMERATE"); ((i+=2)); continue
+      fi
+      ;;
+  esac
+  args+=("$a"); ((i++))
+done
+
+# Only inject codec params when the caller did not set any of its own.
+if (( have_param == 0 )); then
+  args+=(-p "preset=$PRESET" -p "crf=$CRF")
+fi
+
+# Pin the audio sample rate. wf-recorder documents 48000 as its default, but
+# recordings on this machine kept coming out at 96000 even though every source
+# in the graph runs at 48000 or below -- so something in its negotiation picks a
+# rate nobody asked for. 96 kHz doubles the data for no gain, and at the default
+# 128 kbps the AAC encoder has under half the bits per sample it needs, which is
+# audible as crackle. Setting it explicitly removes the guesswork.
+if (( have_rate == 0 )); then
+  args+=(-R "$RATE")
+fi
+
+# exec -a keeps argv[0] as the bare name "wf-recorder". omarchy-capture-screenrecording
+# finds the running recorder with an anchored regex, ^(gpu-screen-recorder|wf-recorder),
+# matched against the full command line. Exec'ing $REAL directly would put
+# "/usr/bin/wf-recorder" there, the anchor would miss, and Super + R could no longer
+# stop a recording -- it would start a second one on top of the first.
+exec -a wf-recorder "$REAL" "${args[@]}"

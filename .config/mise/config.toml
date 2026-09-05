@@ -1,10 +1,10 @@
 [tools]
+claude = "latest"
+codex = "latest"
 gh = "latest"
-npm = "latest"
+"llama.cpp" = { version = "latest", version_prefix = "b" }
+node = "latest"
+ollama = "latest"
 opencode = "latest"
+pi = "latest"
 ruby = "latest"
-
-[settings]
-
-[settings.ruby]
-compile = true

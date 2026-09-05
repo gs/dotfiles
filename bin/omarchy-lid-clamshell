@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Lid handler for Apple Silicon. Latches lid state into a flag and reloads
+# Hyprland so monitors.lua re-evaluates it.
+#
+# Deliberately does NOT call omarchy-hyprland-monitor-clamshell: that script
+# resolves omarchy-hw-laptop-closed through its own PATH, which on the
+# monitor-watch daemon puts /usr/share/omarchy/bin (the ACPI version, broken on
+# Apple Silicon) ahead of any override. monitors.lua is the single source of
+# truth instead.
+#
+# Usage: omarchy-lid-clamshell <closed|open>
+set -u
+# Runtime, not state: this flag must NOT survive a reboot. When it lived under
+# ~/.local/state, shutting down with the lid closed and booting with it open left
+# a stale "closed" that no event could clear, and monitors.lua disabled eDP-1
+# permanently. It is now only a fallback anyway -- omarchy-lid-state reads the
+# real SW_LID bit from the kernel.
+STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy"
+# The log, unlike the flag, is worth keeping across reboots.
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy"
+mkdir -p "$LOG_DIR"
+LOG="$LOG_DIR/lid-clamshell.log"
+mkdir -p "$STATE_DIR"
+
+case "${1:-}" in
+  closed) : > "$STATE_DIR/lid-closed" ;;
+  open)   rm -f "$STATE_DIR/lid-closed" ;;
+  *)      echo "usage: $0 <closed|open>" >&2; exit 2 ;;
+esac
+
+hyprctl reload >/dev/null 2>&1
+
+# Keep the log from growing without bound: trim to the last 200 lines.
+if [[ -f $LOG ]] && (( $(wc -l < "$LOG") > 200 )); then
+  tail -n 100 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+fi
+
+printf '%s  lid=%-6s  eDP-1-disabled=%s\n' "$(date '+%H:%M:%S')" "$1" \
+  "$(hyprctl monitors all -j 2>/dev/null | jq -r '.[]|select(.name=="eDP-1")|.disabled')" >> "$LOG"

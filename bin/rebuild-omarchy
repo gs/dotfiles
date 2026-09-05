@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+# Rebuild and reinstall Omarchy from the local checkout.
+#
+# `omarchy update` cannot do this. The core packages here are built locally and
+# exist in no repository, so `checkupdates` never sees them, and
+# omarchy-update-available only consults git when OMARCHY_PATH points at a dev
+# checkout — which it does not. The result is that it reports "Omarchy is up to
+# date" no matter how far behind the checkout has fallen.
+#
+# Source of truth is the git checkout (codeberg.org/malik-na/omarchy-mac).
+# build-packages.sh passes OMARCHY_SRC to makepkg and the PKGBUILD honours it,
+# so the build comes from that tree rather than the pinned upstream commit.
+#
+# Usage:
+#   rebuild-omarchy --check        report how far behind, change nothing
+#   rebuild-omarchy                pull, build, install, verify
+#   rebuild-omarchy --yes          same, no confirmation prompt
+#   rebuild-omarchy --force        rebuild even when already up to date
+#   rebuild-omarchy --no-snapshot  skip the pre-update snapper snapshot
+#
+# Env:
+#   OMARCHY_SRC_CHECKOUT   override the checkout path
+
+set -euo pipefail
+
+CHECKOUT="${OMARCHY_SRC_CHECKOUT:-$HOME/.local/share/omarchy}"
+PACKAGES=(omarchy-keyring ttf-jetbrains-mono-nerd-basic omarchy-settings omarchy)
+
+check_only=0 assume_yes=0 force=0 snapshot=1
+
+for arg in "$@"; do
+  case "$arg" in
+    --check) check_only=1 ;;
+    --yes | -y) assume_yes=1 ;;
+    --force) force=1 ;;
+    --no-snapshot) snapshot=0 ;;
+    -h | --help) sed -n '2,25p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    *) printf 'Unknown option: %s (try --help)\n' "$arg" >&2; exit 2 ;;
+  esac
+done
+
+green() { printf '\033[32m==>\033[0m %s\n' "$*"; }
+warn()  { printf '\033[33m==>\033[0m %s\n' "$*" >&2; }
+fail()  { printf '\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# --- preflight ---------------------------------------------------------------
+
+[[ $EUID -ne 0 ]] || fail "Run as your normal user; makepkg refuses to run as root."
+[[ -d $CHECKOUT ]] || fail "No checkout at $CHECKOUT (set OMARCHY_SRC_CHECKOUT)."
+git -C "$CHECKOUT" rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
+  fail "$CHECKOUT is not a git checkout."
+[[ -x $CHECKOUT/build-packages.sh ]] || fail "$CHECKOUT/build-packages.sh is missing."
+
+branch=$(git -C "$CHECKOUT" branch --show-current)
+upstream=$(git -C "$CHECKOUT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)
+[[ -n $upstream ]] || fail "Branch '$branch' has no upstream to compare against."
+
+green "Fetching $upstream"
+git -C "$CHECKOUT" fetch --quiet
+
+behind=$(git -C "$CHECKOUT" rev-list --count "HEAD..$upstream")
+ahead=$(git -C "$CHECKOUT" rev-list --count "$upstream..HEAD")
+dirty=$(git -C "$CHECKOUT" status --porcelain)
+
+# Migrations run automatically during `omarchy update`, so they are the only
+# part of an incoming diff that can change this system without being asked.
+new_migrations=$(git -C "$CHECKOUT" diff --name-only "HEAD..$upstream" -- migrations/ | wc -l)
+
+printf '\n'
+printf '  checkout   %s\n' "$CHECKOUT"
+printf '  branch     %s -> %s\n' "$branch" "$upstream"
+printf '  behind     %s commit(s)\n' "$behind"
+printf '  ahead      %s commit(s)\n' "$ahead"
+printf '  worktree   %s\n' "$([[ -z $dirty ]] && echo clean || echo 'MODIFIED')"
+printf '  migrations %s new\n' "$new_migrations"
+printf '  installed  %s\n' "$(pacman -Q omarchy 2>/dev/null || echo 'not installed')"
+printf '\n'
+
+if ((behind > 0)); then
+  green "Incoming commits"
+  # --max-count rather than `| head`: head closing the pipe hands git a SIGPIPE,
+  # and under `set -o pipefail` that surfaces as exit 141 and kills the script.
+  git -C "$CHECKOUT" log --max-count=20 --format='  %h %ad %an  %s' --date=short "HEAD..$upstream"
+  ((behind > 20)) && printf '  ... and %s more\n' "$((behind - 20))" || true
+  printf '\n'
+  green "Changed files that ship on this system (excluding tests)"
+  git -C "$CHECKOUT" diff --name-status "HEAD..$upstream" |
+    grep -vE '^[A-Z]+[[:space:]]+tests?/' | sed 's/^/  /' || true
+  printf '\n'
+fi
+
+if ((check_only)); then
+  ((behind > 0)) && exit 0 || exit 1
+fi
+
+# --- decide whether there is work to do --------------------------------------
+
+[[ -z $dirty ]] || fail "Worktree has local changes. Commit or stash them first."
+((ahead == 0)) || fail "Branch is $ahead commit(s) ahead of $upstream; pull would not fast-forward."
+
+if ((behind == 0 && force == 0)); then
+  green "Already up to date. Use --force to rebuild anyway."
+  exit 0
+fi
+
+if ((assume_yes == 0)); then
+  read -rp "Pull, rebuild and reinstall Omarchy? [y/N] " reply
+  [[ $reply == [yY]* ]] || { echo "Aborted."; exit 0; }
+fi
+
+# --- snapshot ----------------------------------------------------------------
+
+if ((snapshot)); then
+  # 127 means snapper is deliberately absent; anything else already explained
+  # itself. A missing snapshot is not worth aborting over, but it must not pass
+  # for one either.
+  green "Creating pre-update snapshot"
+  omarchy-snapshot create || (($? == 127)) ||
+    warn "Continuing without a snapshot."
+fi
+
+# --- pull --------------------------------------------------------------------
+
+green "Pulling $upstream"
+git -C "$CHECKOUT" pull --ff-only
+green "Now at $(git -C "$CHECKOUT" log --oneline -1)"
+
+# --- build -------------------------------------------------------------------
+
+# Anything older than this in build-output/ is a leftover from a previous run,
+# not something this build produced.
+build_started=$(date +%s)
+
+green "Building packages (this takes a few minutes)"
+( cd "$CHECKOUT" && ./build-packages.sh )
+
+output_dir="$CHECKOUT/build-output"
+built=()
+for pkg in "${PACKAGES[@]}"; do
+  # Match the package's own files only: a bare pkg-* glob would let
+  # "omarchy-keyring-*" satisfy the check for "omarchy-*".
+  found=$(find "$output_dir" -maxdepth 1 -name "$pkg-[0-9]*.pkg.tar.*" \
+    -newermt "@$build_started" -print -quit 2>/dev/null || true)
+  [[ -n $found ]] || fail "$pkg was not rebuilt (no fresh package in $output_dir)."
+  built+=("$found")
+done
+
+green "Built ${#built[@]} package(s)"
+printf '  %s\n' "${built[@]##*/}"
+
+# --- install -----------------------------------------------------------------
+
+# The PKGBUILD pins pkgver/pkgrel and does not bump them on rebuild, so pacman
+# sees the same version and calls this a reinstall. That is expected: the
+# version number is not evidence either way, the file contents are.
+green "Installing (pacman will say 'reinstalling' — expected)"
+sudo pacman -U --noconfirm "${built[@]}"
+
+# --- verify ------------------------------------------------------------------
+
+printf '\n'
+green "Verifying"
+status=0
+
+if grep -q 'asahi' /etc/mkinitcpio.conf.d/omarchy_hooks.conf 2>/dev/null; then
+  printf '  \033[32mok\033[0m   omarchy_hooks.conf re-inserts the asahi hook\n'
+else
+  printf '  \033[33m--\033[0m   omarchy_hooks.conf has no asahi handling (zz-asahi-hook.conf still carries it)\n'
+fi
+
+if command -v omarchy-mac-snapshot-restore >/dev/null 2>&1; then
+  printf '  \033[32mok\033[0m   omarchy-mac-snapshot-restore present (snapshots restorable)\n'
+else
+  printf '  \033[33m--\033[0m   omarchy-mac-snapshot-restore absent (snapshot restore still broken on Mac)\n'
+fi
+
+if [[ -n $(find /usr/share/omarchy/bin -maxdepth 1 -newermt "@$build_started" -print -quit 2>/dev/null) ]]; then
+  printf '  \033[32mok\033[0m   /usr/share/omarchy/bin was rewritten by this install\n'
+else
+  printf '  \033[31mFAIL\033[0m /usr/share/omarchy/bin looks untouched — the install may not have applied\n'
+  status=1
+fi
+
+if ((new_migrations > 0)); then
+  printf '\n'
+  warn "$new_migrations new migration(s) shipped. Run 'omarchy update' to apply them."
+fi
+
+printf '\n'
+green "Done. Installed: $(pacman -Q omarchy)"
+printf '  Rollback: sudo pacman -U /var/cache/pacman/pkg/omarchy-*.pkg.tar.zst\n'
+
+exit $status

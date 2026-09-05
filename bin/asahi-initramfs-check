@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# Verify the Apple Silicon vendor-firmware hook survives into the initramfs.
+#
+# The `asahi` initcpio hook unpacks <ESP>/vendorfw/firmware.cpio into a tmpfs at
+# /lib/firmware/vendor during early boot. Without it, Wi-Fi, Bluetooth, the Touch
+# Bar, the camera and the display have no firmware, and the boot can wedge inside
+# the initramfs with no keyboard to recover from.
+#
+# Omarchy's omarchy_hooks.conf assigns HOOKS wholesale from a list written for
+# x86. It now re-inserts `asahi` itself (upstream fix for issue #156), but that
+# is one drop-in away from regressing, and the failure is silent until reboot.
+#
+# Run this after any mkinitcpio run, kernel change, or omarchy update --
+# BEFORE rebooting.
+#
+# Usage:
+#   asahi-initramfs-check           verify; non-zero exit if anything is wrong
+#   asahi-initramfs-check --save    verify, then refresh the rescue initramfs
+#
+# The rescue copy is what 'Arch Linux (known-good initramfs)' boots in GRUB.
+# --save refuses to overwrite it with an image that fails verification.
+
+set -uo pipefail
+
+KERNEL="${ASAHI_KERNEL:-linux-asahi-fairydust}"
+KNOWN_GOOD="/boot/initramfs-${KERNEL}-known-good.img"
+
+save=0
+case "${1:-}" in
+  --save) save=1 ;;
+  -h | --help) sed -n '2,22p' "$0" | sed 's/^# \?//'; exit 0 ;;
+  "") ;;
+  *) printf 'Unknown option: %s (try --help)\n' "${1}" >&2; exit 2 ;;
+esac
+
+ok()   { printf '  \033[32mok\033[0m   %s\n' "$*"; }
+bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$*"; status=1; }
+note() { printf '  \033[33m--\033[0m   %s\n' "$*"; }
+
+status=0
+unverified=0
+
+# Reading /boot/initramfs-*.img needs root (mode 0600). Establish that once,
+# with the prompt visible, rather than per-call with stderr suppressed --
+# otherwise a sudo that cannot prompt looks identical to a missing hook, and
+# the script cries wolf about a perfectly good image.
+can_read_boot=1
+if ! sudo -n true 2>/dev/null; then
+  if [[ -t 0 ]]; then
+    sudo true || can_read_boot=0
+  else
+    can_read_boot=0
+  fi
+fi
+
+# 0 = contains the hook, 1 = does not, 2 = could not read it
+inspect() {
+  ((can_read_boot)) || return 2
+  local out
+  out=$(sudo lsinitcpio "$1" 2>/dev/null) || return 2
+  grep -qx "hooks/asahi" <<<"$out"
+}
+
+# --- 1. what HOOKS will mkinitcpio actually resolve to? ----------------------
+# Source the config the way mkinitcpio does: main file, then drop-ins in shell
+# glob order. A drop-in that reassigns HOOKS wholesale can silently drop asahi.
+printf '\nResolved HOOKS\n'
+hooks_line=$(
+  set +u
+  source /etc/mkinitcpio.conf 2>/dev/null
+  for f in /etc/mkinitcpio.conf.d/*.conf; do [[ -e $f ]] && source "$f" 2>/dev/null; done
+  printf '%s' "${HOOKS[*]}"
+)
+printf '  %s\n' "$hooks_line"
+
+count=$(printf '%s\n' $hooks_line | grep -cx asahi)
+case "$count" in
+  1) ok "asahi present exactly once" ;;
+  0) bad "asahi MISSING — regenerating the initramfs now would produce an unbootable image" ;;
+  *) bad "asahi appears $count times — duplicate hook" ;;
+esac
+
+# --- 2. does the built initramfs actually contain it? ------------------------
+# The resolved HOOKS above describe the *next* build; this is the image on disk
+# that the next boot will actually load.
+printf '\nInitramfs images\n'
+shopt -s nullglob
+for img in /boot/initramfs-*.img; do
+  [[ $img == *-known-good.img ]] && continue
+  inspect "$img"
+  case $? in
+    0) ok "$(basename "$img")" ;;
+    1) bad "$(basename "$img") has no hooks/asahi" ;;
+    2) note "$(basename "$img") not verified (needs root)"; unverified=1 ;;
+  esac
+done
+
+# --- 3. rescue copy ----------------------------------------------------------
+printf '\nRescue image\n'
+if [[ -e $KNOWN_GOOD ]]; then
+  inspect "$KNOWN_GOOD"
+  case $? in
+    0) ok "$(basename "$KNOWN_GOOD") ($(stat -c %y "$KNOWN_GOOD" 2>/dev/null | cut -c1-16))" ;;
+    1) bad "$(basename "$KNOWN_GOOD") is itself broken — it would not rescue anything" ;;
+    2) note "$(basename "$KNOWN_GOOD") not verified (needs root)"; unverified=1 ;;
+  esac
+else
+  note "no rescue image yet; run with --save"
+fi
+
+# --- 4. optionally refresh the rescue copy -----------------------------------
+if ((save)); then
+  printf '\nSaving rescue image\n'
+  if ((status != 0)); then
+    bad "refusing to save: verification failed above"
+  else
+    live="/boot/initramfs-${KERNEL}.img"
+    if [[ -e $live ]]; then
+      sudo cp -a "$live" "$KNOWN_GOOD" && ok "refreshed from $(basename "$live")"
+    else
+      bad "$live does not exist"
+    fi
+  fi
+fi
+
+printf '\n'
+if ((status == 0 && unverified == 0)); then
+  printf '\033[32mAll good.\033[0m Safe to reboot.\n'
+elif ((status == 0)); then
+  printf '\033[33mConfig is correct, but the images were not verified.\033[0m Re-run where sudo can prompt.\n'
+else
+  printf '\033[31mDo not reboot yet.\033[0m Repair with:\n'
+  printf '  1. restore the hook, e.g. recreate /etc/mkinitcpio.conf.d/zz-asahi-hook.conf\n'
+  printf '  2. sudo mkinitcpio -P\n'
+  printf '  3. re-run this check\n'
+  printf 'If you have already rebooted into a broken image, pick\n'
+  printf "  'Arch Linux (known-good initramfs — rescue)' at the GRUB menu.\n"
+fi
+
+exit $status

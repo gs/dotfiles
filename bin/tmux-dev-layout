@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Arrange the current tmux window into a dev layout and start the tools:
+#
+#   +-------------+-----------------+
+#   |  nvim       |                 |
+#   +-------------+   claude        |
+#   |  terminal   |   full height   |
+#   +-------------+-----------------+
+#
+# Idempotent in both dimensions:
+#   * panes are added only until there are three, never killed
+#   * a command is sent only into a pane sitting at an idle shell, so pressing
+#     the binding again on a working window re-applies the geometry and leaves
+#     running programs alone
+#
+# Tunables (env):
+#   TDL_LEFT_WIDTH   width of the left column, percent    (default 40)
+#   TDL_TOP_HEIGHT   height of the top-left pane, percent (default 60)
+#   TDL_EDITOR       command for the top-left pane        (default nvim)
+#   TDL_RIGHT        command for the right pane           (default claude)
+#   TDL_NO_LAUNCH    set to any value to only arrange panes, launching nothing
+
+set -u
+
+LEFT_WIDTH="${TDL_LEFT_WIDTH:-40}"
+TOP_HEIGHT="${TDL_TOP_HEIGHT:-60}"
+EDITOR_CMD="${TDL_EDITOR:-nvim}"
+RIGHT_CMD="${TDL_RIGHT:-claude}"
+
+panes=$(tmux list-panes | wc -l)
+
+if (( panes == 1 )); then
+  tmux split-window -h -c "#{pane_current_path}"
+  tmux select-pane -L
+  tmux split-window -v -c "#{pane_current_path}"
+elif (( panes == 2 )); then
+  tmux select-pane -L
+  tmux split-window -v -c "#{pane_current_path}"
+fi
+
+# Identify panes by position, not index, so this works whatever order they
+# were created in. Sorting by (left, top): first is top-left, last is rightmost.
+mapfile -t sorted < <(tmux list-panes -F '#{pane_id} #{pane_left} #{pane_top}' \
+  | sort -k2,2n -k3,3n)
+
+(( ${#sorted[@]} >= 3 )) || exit 0
+
+top_left=$(printf '%s\n' "${sorted[0]}" | cut -d' ' -f1)
+right=$(tmux list-panes -F '#{pane_id} #{pane_left}' | sort -k2,2n | tail -1 | cut -d' ' -f1)
+
+tmux resize-pane -t "$top_left" -x "${LEFT_WIDTH}%"
+tmux resize-pane -t "$top_left" -y "${TOP_HEIGHT}%"
+
+# Send a command only if that pane is sitting at a plain shell prompt.
+launch_if_idle() {
+  local pane=$1 cmd=$2 current
+  [[ -n ${TDL_NO_LAUNCH:-} ]] && return 0
+  [[ -n $cmd ]] || return 0
+  current=$(tmux display-message -p -t "$pane" '#{pane_current_command}')
+  case "$current" in
+    bash | zsh | fish | sh | dash) tmux send-keys -t "$pane" "$cmd" C-m ;;
+  esac
+}
+
+launch_if_idle "$top_left" "$EDITOR_CMD"
+launch_if_idle "$right" "$RIGHT_CMD"
+
+tmux select-pane -t "$top_left"

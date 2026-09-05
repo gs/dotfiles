@@ -28,56 +28,36 @@ for config_dir in "$DOTFILES_DIR/.config"/*; do
         dir_name=$(basename "$config_dir")
         target="$CONFIG_DIR/$dir_name"
         
-        # Special handling for fish config - we need to merge with existing config
-        if [ "$dir_name" = "fish" ]; then
-            echo "Setting up fish configuration..."
-            
-            # Backup existing config if it exists
-            if [ -f "$CONFIG_DIR/fish/config.fish" ]; then
-                echo "Backing up existing fish config..."
-                cp "$CONFIG_DIR/fish/config.fish" "$CONFIG_DIR/fish/config.fish.backup"
-            fi
-            
-            # Create fish config directory
-            mkdir -p "$CONFIG_DIR/fish"
-            
-            # Copy dotfiles fish config
-            cp -r "$config_dir"/* "$CONFIG_DIR/fish/" 2>/dev/null || true
-            
-            # Prepend mise activation to fish config (must run before starship/zoxide)
-            if [ -f "$CONFIG_DIR/fish/config.fish" ]; then
-                echo "Adding mise activation to fish config..."
-                cat > "$CONFIG_DIR/fish/config.fish.tmp" << 'EOF'
-# mise activation (added by devcontainer)
-if status is-interactive
-    /usr/local/bin/mise activate fish | source
-end
+        # tiny_nvim is the nvim config: it lands at ~/.config/nvim
+        if [ "$dir_name" = "tiny_nvim" ]; then
+            target="$CONFIG_DIR/nvim"
+        fi
 
-EOF
-                cat "$CONFIG_DIR/fish/config.fish" >> "$CONFIG_DIR/fish/config.fish.tmp"
-                mv "$CONFIG_DIR/fish/config.fish.tmp" "$CONFIG_DIR/fish/config.fish"
-            fi
-            
-            # Symlink other fish directories
-            for subdir in "$config_dir"/*; do
-                if [ -d "$subdir" ]; then
-                    subdir_name=$(basename "$subdir")
-                    if [ ! -e "$CONFIG_DIR/fish/$subdir_name" ]; then
-                        ln -sf "$subdir" "$CONFIG_DIR/fish/$subdir_name"
-                    fi
-                fi
-            done
+        if [ ! -e "$target" ]; then
+            echo "Symlinking $dir_name..."
+            ln -sf "$config_dir" "$target"
         else
-            # For other configs, just symlink the entire directory
-            if [ ! -e "$target" ]; then
-                echo "Symlinking $dir_name..."
-                ln -sf "$config_dir" "$target"
-            else
-                echo "Skipping $dir_name (already exists)..."
-            fi
+            echo "Skipping $dir_name (already exists)..."
         fi
     fi
 done
+
+# Clone tmux plugins. .config/tmux/plugins/ is gitignored (they are upstream
+# clones, not our code), so a fresh machine has the config but no plugins --
+# tmux would then start with dead run-shell lines and no session persistence.
+TMUX_PLUGIN_DIR="$DOTFILES_DIR/.config/tmux/plugins"
+if [ -f "$DOTFILES_DIR/.config/tmux/tmux.conf" ]; then
+    mkdir -p "$TMUX_PLUGIN_DIR"
+    for repo in tmux-resurrect tmux-continuum; do
+        if [ ! -d "$TMUX_PLUGIN_DIR/$repo" ]; then
+            echo "Cloning $repo..."
+            git clone --depth 1 "https://github.com/tmux-plugins/$repo" \
+                "$TMUX_PLUGIN_DIR/$repo"
+        else
+            echo "Skipping $repo (already cloned)..."
+        fi
+    done
+fi
 
 # Symlink starship config if it exists
 if [ -f "$DOTFILES_DIR/.config/starship.toml" ]; then
@@ -85,23 +65,48 @@ if [ -f "$DOTFILES_DIR/.config/starship.toml" ]; then
     ln -sf "$DOTFILES_DIR/.config/starship.toml" "$CONFIG_DIR/starship.toml"
 fi
 
-# Symlink bin directory
+# Symlink bin directory into ~/.local/bin, which is already on PATH on this
+# system. It used to be ~/bin, which nothing adds to PATH -- scripts landed
+# there and appeared missing, and tmux.conf's `L` binding (which calls
+# ~/.local/bin/tmux-dev-layout by absolute path) broke on a fresh machine.
+BIN_DIR="$HOME/.local/bin"
 if [ -d "$DOTFILES_DIR/bin" ]; then
-    echo "Symlinking bin directory..."
-    mkdir -p "$HOME/bin"
+    echo "Symlinking bin directory into $BIN_DIR..."
+    mkdir -p "$BIN_DIR"
     for script in "$DOTFILES_DIR/bin"/*; do
         if [ -f "$script" ]; then
             script_name=$(basename "$script")
-            ln -sf "$script" "$HOME/bin/$script_name"
+            ln -sf "$script" "$BIN_DIR/$script_name"
         fi
     done
-    
-    # Add bin to PATH in fish config if not already there
-    if [ -f "$CONFIG_DIR/fish/config.fish" ]; then
-        if ! grep -q "fish_add_path ~/bin" "$CONFIG_DIR/fish/config.fish"; then
-            echo "fish_add_path ~/bin" >> "$CONFIG_DIR/fish/config.fish"
+fi
+
+# Omarchy Hyprland Lua overrides, symlinked per-file. On an Omarchy machine
+# ~/.config/hypr already exists (monitors.lua and friends are machine-specific
+# and stay local), so the whole-directory symlink loop above skips it.
+if [ -d "$CONFIG_DIR/hypr" ] && [ ! -L "$CONFIG_DIR/hypr" ]; then
+    for f in hyprland.lua bindings.lua input.lua looknfeel.lua autostart.lua; do
+        if [ -f "$DOTFILES_DIR/.config/hypr/$f" ]; then
+            echo "Symlinking hypr/$f..."
+            ln -sf "$DOTFILES_DIR/.config/hypr/$f" "$CONFIG_DIR/hypr/$f"
         fi
-    fi
+    done
+fi
+
+# System-level wrappers (Asahi screen-recording fixes for wf-recorder/ffmpeg).
+# These must live in /usr/local/bin to shadow /usr/bin for Omarchy's capture
+# scripts, so they are installed as root-owned copies, not symlinks. Only
+# attempted interactively since it needs sudo; harmless to skip elsewhere.
+if [ -d "$DOTFILES_DIR/usr-local-bin" ] && [ -t 0 ] && command -v sudo >/dev/null 2>&1; then
+    for script in "$DOTFILES_DIR/usr-local-bin"/*; do
+        [ -f "$script" ] || continue
+        script_name=$(basename "$script")
+        if ! cmp -s "$script" "/usr/local/bin/$script_name"; then
+            echo "Installing /usr/local/bin/$script_name (needs sudo)..."
+            sudo install -m 0755 "$script" "/usr/local/bin/$script_name" \
+                || echo "Skipped $script_name (sudo failed)."
+        fi
+    done
 fi
 
 # --- Private dotfiles: SSH config + private keys ---

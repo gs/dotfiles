@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Narrow wrapper around /usr/bin/ffmpeg.
+#
+# It changes exactly one command line and passes everything else through
+# untouched: the post-processing pass in omarchy-capture-screenrecording's
+# finalize_recording().
+#
+# That pass runs:
+#
+#   ffmpeg -y -ss 0.1 -i <rec> -c:v copy -af "...,loudnorm=I=-14:TP=-1.5:LRA=11" <out>
+#
+# with no output sample rate. loudnorm upsamples to 192 kHz internally for
+# true-peak detection, and with nothing pinning the output, ffmpeg negotiates the
+# encoder rate from the filter graph. The AAC encoder tops out at 96 kHz, so
+# every finished recording lands there -- measured 48000 Hz in, 96000 Hz out.
+#
+# Nothing on this machine produces 96 kHz: the speakers, the mic and the webcam
+# all run at 48 kHz or below, so the extra rate carries no information. It just
+# halves the bits per sample the encoder has to spend at its default 128 kb/s,
+# which is audible as crackle.
+#
+# Injecting -ar 48000 keeps the file at the rate it was captured at.
+#
+# Guarded on omarchy's exact loudnorm string so no other ffmpeg call is touched.
+# Set FFMPEG_WRAPPER_DISABLE=1 to bypass entirely.
+
+REAL=/usr/bin/ffmpeg
+[[ -n ${FFMPEG_WRAPPER_DISABLE:-} ]] && exec -a ffmpeg "$REAL" "$@"
+
+OMARCHY_CHAIN='loudnorm=I=-14:TP=-1.5:LRA=11'
+
+matches=0
+have_ar=0
+for a in "$@"; do
+  [[ $a == *"$OMARCHY_CHAIN"* ]] && matches=1
+  [[ $a == "-ar" ]] && have_ar=1
+done
+
+if (( matches == 0 || have_ar == 1 )); then
+  exec -a ffmpeg "$REAL" "$@"
+fi
+
+# Insert -ar right after the -af argument pair, which keeps it ahead of the
+# output file where ffmpeg expects per-output options.
+args=()
+i=0
+argv=("$@")
+while (( i < ${#argv[@]} )); do
+  args+=("${argv[$i]}")
+  if [[ ${argv[$i]} == "-af" ]]; then
+    args+=("${argv[$((i + 1))]}" -ar 48000)
+    ((i += 2))
+    continue
+  fi
+  ((i++))
+done
+
+exec -a ffmpeg "$REAL" "${args[@]}"

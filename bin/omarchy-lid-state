@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Report whether the laptop lid is closed, on Apple Silicon.
+
+Exit 0 = closed, 1 = open, matching omarchy-hw-laptop-closed's convention.
+With --print, also writes "closed" or "open" to stdout.
+
+Why this exists
+---------------
+Omarchy reads the lid from /proc/acpi/button/lid/*/state. Apple Silicon is a
+device-tree platform with no ACPI at all, so that glob never matches and the lid
+always reads as open.
+
+The first workaround here latched the state into a file written by Hyprland's
+switch bindings. That file lived under ~/.local/state and therefore survived
+reboots, while only a lid-*event* could clear it. Shut the machine down with the
+lid closed, boot it with the lid open, and no event ever fires: the stale file
+says "closed", monitors.lua disables eDP-1 on the next reload, and the internal
+panel goes dark permanently with no way back short of a forced reboot. That
+happened on 2026-08-21 (apple-dcp 231c00000.dcp: dcp_poweroff(), never powered
+back on).
+
+So ask the kernel instead. EVIOCGSW on the "Apple SMC power/lid events" device
+does maintain the SW_LID bit -- an earlier note in this project claimed it did
+not, but that measurement was racing the event and was wrong.
+
+A cached file is still consulted, but only as a fallback when the ioctl cannot
+be used, and it now lives in XDG_RUNTIME_DIR so it cannot outlive the boot.
+"""
+
+import fcntl
+import glob
+import os
+import struct
+import sys
+
+SW_LID = 0x00
+DEVICE_HINTS = ("lid", "smc power")
+
+
+def _eviocgsw(length: int) -> int:
+    # _IOC(_IOC_READ, 'E', 0x1b, length)
+    return (2 << 30) | (ord("E") << 8) | 0x1B | (length << 16)
+
+
+def _device_name(path: str) -> str:
+    node = os.path.basename(path)
+    try:
+        with open(f"/sys/class/input/{node}/device/name") as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
+
+
+def lid_closed_via_evdev():
+    """True/False from the kernel, or None if no device could be queried."""
+    for path in sorted(glob.glob("/dev/input/event*")):
+        name = _device_name(path).lower()
+        if not any(hint in name for hint in DEVICE_HINTS):
+            continue
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError:
+            continue
+        try:
+            buf = bytearray(8)
+            fcntl.ioctl(fd, _eviocgsw(8), buf)
+            bits = struct.unpack("<Q", bytes(buf))[0]
+            return bool((bits >> SW_LID) & 1)
+        except OSError:
+            continue
+        finally:
+            os.close(fd)
+    return None
+
+
+def lid_closed_via_cache():
+    """Fallback flag, written by omarchy-lid-clamshell on switch events."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    return os.path.exists(os.path.join(runtime, "omarchy", "lid-closed"))
+
+
+def main() -> int:
+    closed = lid_closed_via_evdev()
+    if closed is None:
+        closed = lid_closed_via_cache()
+
+    if "--print" in sys.argv:
+        print("closed" if closed else "open")
+
+    return 0 if closed else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

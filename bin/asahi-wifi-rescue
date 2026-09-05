@@ -1,0 +1,281 @@
+#!/usr/bin/env bash
+# Diagnose (and optionally repair) missing Wi-Fi on Apple Silicon / Asahi.
+#
+# Wi-Fi, Bluetooth, the Touch Bar and the camera on this machine all depend on
+# Apple vendor firmware that is NOT in linux-firmware. It lives on the EFI
+# system partition as vendorfw/firmware.cpio, and the `asahi` initcpio hook
+# unpacks it into a tmpfs at /usr/lib/firmware/vendor during early boot.
+#
+# Omarchy's omarchy_hooks.conf assigns HOOKS wholesale from a list written for
+# x86. If that ever drops `asahi` again (it did once -- issue #156), the next
+# initramfs build silently produces an image with no firmware, and you only
+# find out at the next boot.
+#
+# This script tells you WHICH link in that chain broke, because the fix differs:
+# a missing hook needs a rebuild and a reboot, while a blocked radio does not.
+#
+# Designed to run in a degraded environment: a bare TTY, no network, no desktop.
+# Bash and coreutils only; every richer tool is optional.
+#
+# Usage:
+#   asahi-wifi-rescue            diagnose, print the exact next command
+#   asahi-wifi-rescue --repair   restore the asahi hook and rebuild the initramfs
+#   asahi-wifi-rescue --radio    try the no-reboot fixes (rfkill, NetworkManager)
+#
+# See also: asahi-initramfs-check, ~/asahi-arch-migration/WIFI-RECOVERY.md
+
+set -uo pipefail
+
+BACKUP_DIR=/root/removed-hacks
+DROPIN=/etc/mkinitcpio.conf.d/zz-asahi-hook.conf
+VENDOR_DIR=/usr/lib/firmware/vendor
+ESP_FW=/boot/efi/vendorfw/firmware.cpio
+
+mode=diagnose
+case "${1:-}" in
+  --repair) mode=repair ;;
+  --radio)  mode=radio ;;
+  -h | --help) sed -n '2,26p' "$0" | sed 's/^# \?//'; exit 0 ;;
+  "") ;;
+  *) printf 'Unknown option: %s (try --help)\n' "$1" >&2; exit 2 ;;
+esac
+
+ok()   { printf '  \033[32mok\033[0m   %s\n' "$*"; }
+bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$*"; }
+note() { printf '  \033[33m--\033[0m   %s\n' "$*"; }
+head_() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# Root is needed to read the ESP and the initramfs images. Establish it ONCE,
+# with the prompt visible, and remember whether we got it.
+#
+# This distinction is load-bearing: if each call just fails quietly, "I could
+# not look" is indistinguishable from "it is missing", and this script would
+# confidently tell you to regenerate firmware that was fine all along --
+# exactly the wrong advice in the middle of a real outage.
+can_root=1
+if [[ $EUID -ne 0 ]]; then
+  if ! sudo -n true 2>/dev/null; then
+    if [[ -t 0 ]]; then sudo true || can_root=0; else can_root=0; fi
+  fi
+fi
+
+as_root() {
+  if [[ $EUID -eq 0 ]]; then "$@"; else sudo "$@"; fi
+}
+
+unverified=0
+
+# ---------------------------------------------------------------- repair mode
+if [[ $mode == repair ]]; then
+  head_ "Restoring the asahi initcpio hook"
+
+  if [[ -e $DROPIN ]]; then
+    ok "$DROPIN already exists"
+  else
+    restored=""
+    for candidate in "$BACKUP_DIR"/zz-asahi-hook.conf*; do
+      [[ -e $candidate ]] || continue
+      as_root cp "$candidate" "$DROPIN" && restored=$candidate && break
+    done
+
+    if [[ -n $restored ]]; then
+      ok "restored from $restored"
+    else
+      # No backup: write it from scratch. Guarded on the hook actually being
+      # installed and not already present, so it stays a no-op once upstream
+      # handles this itself.
+      note "no backup found; writing a fresh drop-in"
+      as_root tee "$DROPIN" >/dev/null <<'DROPIN_EOF'
+# Re-insert the asahi hook after `base`.
+#
+# omarchy_hooks.conf assigns HOOKS wholesale from a list written for x86, and
+# drop-ins are sourced after the main config, so a plain assignment discards
+# Arch Linux ARM's `asahi` hook. Without it the initramfs cannot stage Apple
+# vendor firmware and the machine boots with no Wi-Fi, Bluetooth, Touch Bar or
+# camera. Sorts after omarchy_hooks.conf by filename.
+if [[ -e /usr/lib/initcpio/install/asahi ]] && [[ " ${HOOKS[*]:-} " != *" asahi "* ]]; then
+  _asahi_hooks=(); _asahi_added=0
+  for _asahi_hook in "${HOOKS[@]}"; do
+    _asahi_hooks+=("$_asahi_hook")
+    if [[ $_asahi_hook == base ]]; then _asahi_hooks+=(asahi); _asahi_added=1; fi
+  done
+  ((_asahi_added)) || _asahi_hooks=(asahi "${_asahi_hooks[@]}")
+  HOOKS=("${_asahi_hooks[@]}")
+  unset _asahi_hooks _asahi_hook _asahi_added
+fi
+DROPIN_EOF
+      [[ -e $DROPIN ]] && ok "wrote $DROPIN" || { bad "could not write $DROPIN"; exit 1; }
+    fi
+  fi
+
+  head_ "Rebuilding every initramfs"
+  as_root mkinitcpio -P || { bad "mkinitcpio failed"; exit 1; }
+
+  head_ "Verifying"
+  if have asahi-initramfs-check; then
+    asahi-initramfs-check
+    exit $?
+  fi
+  # Fall back to an inline check so this still works if the other script is gone.
+  rc=0
+  for img in /boot/initramfs-*.img; do
+    [[ $img == *-known-good.img ]] && continue
+    if as_root lsinitcpio "$img" 2>/dev/null | grep -qx hooks/asahi; then
+      ok "$(basename "$img")"
+    else
+      bad "$(basename "$img") still has no hooks/asahi"; rc=1
+    fi
+  done
+  ((rc == 0)) && printf '\n\033[32mRepaired.\033[0m Reboot normally.\n' \
+              || printf '\n\033[31mStill broken.\033[0m Boot the rescue GRUB entry.\n'
+  exit $rc
+fi
+
+# ----------------------------------------------------------------- radio mode
+if [[ $mode == radio ]]; then
+  head_ "No-reboot fixes"
+  have rfkill && { as_root rfkill unblock wifi && ok "rfkill unblock wifi"; }
+  have nmcli  && { nmcli radio wifi on >/dev/null 2>&1 && ok "nmcli radio wifi on"; }
+  as_root systemctl restart NetworkManager && ok "restarted NetworkManager"
+  sleep 3
+  have nmcli && nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null | grep ':wifi:' | sed 's/^/  /'
+  exit 0
+fi
+
+# ------------------------------------------------------------- diagnose mode
+problem=""
+
+head_ "1. Vendor firmware staged into early boot"
+if [[ -d $VENDOR_DIR/brcm ]] && [[ -n $(ls -A "$VENDOR_DIR/brcm" 2>/dev/null) ]]; then
+  ok "$VENDOR_DIR/brcm has $(ls -1 "$VENDOR_DIR/brcm" | wc -l) files"
+  mountpoint -q "$VENDOR_DIR" 2>/dev/null && ok "tmpfs mounted (the asahi hook ran)" \
+                                          || note "not a tmpfs mount — unusual but files are present"
+else
+  bad "$VENDOR_DIR/brcm is missing or empty — the asahi hook did not run"
+  problem=hook
+fi
+
+head_ "2. Firmware source on the EFI partition"
+if ((can_root == 0)); then
+  note "not verified (needs root)"; unverified=1
+elif as_root test -s "$ESP_FW"; then
+  ok "$ESP_FW present ($(as_root du -h "$ESP_FW" 2>/dev/null | cut -f1))"
+else
+  bad "$ESP_FW missing or empty — the hook would have nothing to unpack"
+  # Deliberately overrides a "hook" verdict from check 1. If the archive itself
+  # is gone, that is the root cause and rebuilding the initramfs alone would
+  # fix nothing -- report the deeper failure, not the symptom.
+  problem=esp
+fi
+
+head_ "3. Hook present in the initramfs that will boot next"
+if ((can_root == 0)); then
+  note "not verified (needs root)"; unverified=1
+else
+  for img in /boot/initramfs-*.img; do
+    [[ $img == *-known-good.img ]] && continue
+    if as_root lsinitcpio "$img" 2>/dev/null | grep -qx hooks/asahi; then
+      ok "$(basename "$img")"
+    else
+      bad "$(basename "$img") has no hooks/asahi"
+      [[ -z $problem ]] && problem=hook
+    fi
+  done
+fi
+
+head_ "4. Driver and interface"
+if lsmod 2>/dev/null | grep -q "^brcmfmac"; then ok "brcmfmac loaded"; else bad "brcmfmac not loaded"; problem="${problem:-driver}"; fi
+wifi_dev=$(ls -1 /sys/class/net 2>/dev/null | while read -r d; do [[ -d /sys/class/net/$d/wireless ]] && echo "$d"; done | head -1)
+if [[ -n $wifi_dev ]]; then ok "wireless interface: $wifi_dev"; else bad "no wireless interface"; problem="${problem:-driver}"; fi
+
+head_ "5. Radio and network manager"
+if have rfkill; then
+  blocked=$(rfkill list wifi 2>/dev/null | grep -c "yes")
+  ((blocked == 0)) && ok "not rfkill blocked" || { bad "rfkill blocked"; problem="${problem:-radio}"; }
+else
+  note "rfkill not installed"
+fi
+if systemctl is-active --quiet NetworkManager 2>/dev/null; then ok "NetworkManager running"; else bad "NetworkManager not running"; problem="${problem:-radio}"; fi
+if have nmcli; then
+  state=$(nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null | grep ':wifi:' | head -1)
+  [[ -n $state ]] && printf '  %s\n' "$state"
+  ssid=$(nmcli -t -f ACTIVE,SSID dev wifi 2>/dev/null | grep '^yes:' | cut -d: -f2-)
+  [[ -n $ssid ]] && ok "connected to $ssid"
+fi
+have iw && printf '  regulatory domain: %s\n' "$(iw reg get 2>/dev/null | awk -F': ' '/country/{print $1; exit}')"
+
+# ------------------------------------------------------------------- verdict
+head_ "Verdict"
+case "$problem" in
+  "")
+    if ((unverified)); then
+      printf '  \033[33mNo problem found, but some checks needed root and were skipped.\033[0m\n'
+      printf '  Re-run where sudo can prompt for a full answer.\n'
+    else
+      printf '  \033[32mWi-Fi chain is intact.\033[0m\n'
+    fi
+    [[ -z ${ssid:-} ]] && printf '  Not associated to a network — pick one in the menu, or: nmcli device wifi connect <SSID>\n'
+    ;;
+  hook)
+    printf '  \033[31mThe asahi firmware hook is the problem.\033[0m\n\n'
+    printf '  Fix it and rebuild:\n'
+    printf '      asahi-wifi-rescue --repair\n\n'
+    printf '  If the machine will not boot far enough to run that, pick this at\n'
+    printf '  the GRUB menu first:\n'
+    printf "      Arch Linux (known-good initramfs — rescue)\n"
+    ;;
+  esp)
+    printf '  \033[31mThe vendor firmware archive on the ESP is missing.\033[0m\n\n'
+    printf '  Regenerate it, then rebuild:\n'
+    printf '      sudo update-vendor-firmware\n'
+    printf '      asahi-wifi-rescue --repair\n'
+    ;;
+  driver)
+    printf '  \033[31mFirmware is staged but the driver did not bind.\033[0m\n\n'
+    printf '  Look for the reason:\n'
+    printf '      dmesg | grep -iE "brcmfmac|firmware"\n'
+    ;;
+  radio)
+    printf '  \033[33mHardware is fine; the radio or NetworkManager is down.\033[0m\n\n'
+    printf '  No reboot needed:\n'
+    printf '      asahi-wifi-rescue --radio\n'
+    ;;
+esac
+
+# ------------------------------------------------- offline fallback readiness
+# Worth checking BEFORE an outage, not during one: every part of this has to be
+# installed while the network still works. This machine has no USB-A ports of
+# its own -- USB arrives through the USB-C dock -- so the fallback depends on
+# hardware being plugged in as much as on software being present.
+head_ "Offline fallback (how you get online with no Wi-Fi)"
+
+if have lsusb || [[ -d /sys/bus/usb/devices ]]; then
+  hub=$(grep -ril "hub" /sys/bus/usb/devices/*/product 2>/dev/null | head -1)
+  [[ -n $hub ]] && ok "USB hub present ($(cat "$hub" 2>/dev/null)) — a USB ethernet adapter would work" \
+                || note "no USB hub detected; plug in the dock for USB ports"
+fi
+
+phone=$(grep -ril "iphone\|android\|pixel\|galaxy" /sys/bus/usb/devices/*/product 2>/dev/null | head -1)
+if [[ -n $phone ]]; then
+  dev=$(dirname "$phone")
+  ok "phone connected: $(cat "$phone" 2>/dev/null)"
+  if [[ -z $(cat "$dev/bConfigurationValue" 2>/dev/null) ]]; then
+    note "but no USB configuration is active — it is charge-only, not trusted"
+    note "unlock it, tap 'Trust This Computer', enable Personal Hotspot, then replug"
+  fi
+else
+  note "no phone connected"
+fi
+
+if have idevice_id; then
+  if [[ -n $(idevice_id -l 2>/dev/null) ]]; then ok "usbmuxd sees a paired iOS device"
+  else note "usbmuxd sees no paired iOS device (pair it once while you still have network)"; fi
+fi
+systemctl is-active --quiet usbmuxd 2>/dev/null && ok "usbmuxd running" || note "usbmuxd not running (needed for iPhone tethering)"
+modinfo ipheth >/dev/null 2>&1 && ok "ipheth module available" || bad "ipheth module missing — iPhone tethering impossible"
+
+printf '\n  Full procedure: ~/asahi-arch-migration/WIFI-RECOVERY.md\n\n'
+
+[[ -z $problem ]] && exit 0 || exit 1
