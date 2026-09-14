@@ -1,41 +1,28 @@
 ---
 name: orchestrate-delivery
-description: Use when coordinating feature delivery across coding and review agents, or when a user confirms a multi-agent implementation plan.
+description: Use when taking a feature from repository research and design discussion through approved delegated implementation and independent review.
 ---
 
-# Orchestrate delivery
+# Simple delivery
 
-Use SPARK for development practice; use an installed delivery runtime for enforced execution. This skill itself installs no commands and enforces no sandbox or budget.
+Use SPARK for process and the installed `pi-subagents` extension for delegation. No custom `/delivery` runtime or setup command is required. These instructions are not a sandbox or a hard cost cap.
 
-## Workflow
+## Discuss, then approve
 
-1. Check actual tools/commands. If the delivery runtime is absent, report **BLOCKED: runtime unavailable**. Research and planning may continue; do not interpret confirmation as permission to silently substitute manual implementation.
-2. **REQUIRED SUB-SKILLS, loaded at their stages:** `project-scanner` when repository memory is absent/stale; `brainstorming` for design; `writing-plans` after design approval. Read relevant `.docs/` first. Missing required skills must be reported rather than invented.
-3. Keep research/discussion on `openai-codex/gpt-6-astra`. If unavailable, request a decision; do not silently substitute another model.
-4. **REQUIRED SUB-SKILL:** `select-task-model` before dispatch. Prepare a launch summary with every field below. Confirmation binds the displayed plan revision, scope, models, checks and limits. A generic earlier “confirm” does not approve missing fields.
-5. **REQUIRED SUB-SKILL:** `subagent-driven-development` for execution. One coder at a time; fresh task context, TDD, independent spec/code review. **REQUIRED SUB-SKILL:** `security-review` for sensitive or uncertain risk.
-6. Check the durable ledger before resuming. Changes to the approved plan or scope require renewed approval. Re-run affected checks/reviews after code changes. Stop after two repair cycles, budget exhaustion, or unresolved blockers; never weaken a gate to finish.
-7. **REQUIRED SUB-SKILLS:** `verification-before-completion`, then `finishing-a-development-branch`. Merge, push and deployment need separate authorization.
+1. Inspect repository instructions, relevant files and existing `.docs/` memory. Use project-scanner only when stable memory needs creation or refresh.
+2. Use brainstorming and writing-plans. Prefer `openai-codex/gpt-6-astra` for research/design; verify availability, never silently substitute.
+3. Use select-task-model. Include exact role/model routes, provider data boundaries, checks, workspace and retry limits in the plan. Ask for explicit execution approval before implementation. Changes to scope or routes need renewed approval.
 
-## Launch summary — all fields required
+## Execute approved plan
 
-- Plan path and revision/hash; acceptance criteria and binding constraints.
-- Exact task file scopes; isolated workspace and runtime permissions.
-- Each agent role, explicit provider/model, qualification evidence and routing reason.
-- Approved cloud providers/data exposure, including exclusions for secrets.
-- Required check commands and review/security gates.
-- Run budget, per-agent limits, maximum two repair cycles and stop conditions.
+Use subagent-driven-development and the installed pi-subagents skill; load stage skills only when needed. Confirm the actual `subagent` tool and inspect `action: "list", capabilities: true` and `action: "models"`. Do not invent tools. If unavailable, continue planning but stop delegation and request reload/setup.
 
-## Token discipline
+Use using-git-worktrees to establish one approved workspace; preserve unrelated changes. All children use that explicit `cwd`, `context: "fresh"`, exact approved `model`, and `agentScope: "user"`. Inspect resolved profiles/overrides before launch. Use `async: true` (required for extension-provided Ollama models); wait for terminal status before advancing. Keep the parent alive for notifications. Infrastructure failure is a blocker: record run ID, error and partial diff; no silent foreground/CLI fallback.
 
-Give workers a task brief, relevant paths/interfaces, required checks and report contract—not the whole conversation or skill library. Reports reference detailed artifacts and exact revisions. File reads still consume tokens. Use deterministic tooling for scheduling and evidence packaging.
+For each coherent task:
+- Dispatch `delivery-coder` with the task contract, relevant paths, acceptance criteria, selected skill references and verification commands. One writer at a time.
+- Parent captures the actual diff, including new files, and check results. Dispatch a fresh `delivery-reviewer` for spec compliance. After fixes and approval, dispatch another fresh reviewer for code quality. Supply source paths and diff/check evidence, not the coder's whole transcript.
+- For auth, permissions, secrets, payments, user input, uploads, dependencies, networking or deployment changes, dispatch `delivery-security` using security-review. Uncertain risk gets security review.
+- Feed actionable findings to the coder; re-review changed results. Default maximum two fix/review rounds per task, then stop and ask. This is an instruction limit, not mechanical enforcement.
 
-## Common mistakes / stop signals
-
-| Temptation | Required response |
-|---|---|
-| “Deadline; proceed with assumptions” | Missing launch fields mean blocked, not approved. |
-| “No runtime; do it myself” | Explain the gap and request a separate manual-work decision. |
-| “Tests passed before the fix” | Verify the current revision. |
-
-Example: “Confirm the contact form” with no budget/provider approval → finish the launch summary and obtain explicit approval; do not start agents.
+Use verification-before-completion: inspect changes and run the required checks yourself. Report completed tasks, review findings, actual verification and remaining risks. No automatic commit, push, merge, deployment, or session sharing. Incomplete checks or failed reviews remain explicit blockers.

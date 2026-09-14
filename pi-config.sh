@@ -14,11 +14,11 @@ case "${1:-}" in
     --skills-only) INSTALL_PACKAGES=0 ;;
     --help|-h)
         printf '%s\n' 'Usage: bash pi-config.sh [--skills-only]' \
-            'Installs pi packages and links dotfiles/pi/skills into ~/.pi/agent/skills.' \
+            'Installs pi packages and links dotfiles/pi/skills and pi/agents into the pi agent directory.' \
             'Links pi/caveman.json to the extension config location (default level: full).' \
             'Respects PI_CODING_AGENT_DIR and Caveman XDG_CONFIG_HOME behavior.' \
             'Existing conflicting files/links are never overwritten.' \
-            '--skills-only links local skills/config without package installs or network calls.'
+            '--skills-only links local skills/agents/config without package installs or network calls.'
         exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
 esac
@@ -46,6 +46,11 @@ for skill_file in "${skills[@]}"; do
     targets+=("$AGENT_DIR/skills/$(basename -- "$source_dir")")
 done
 
+for agent_file in "$DOTFILES_DIR"/pi/agents/*.md; do
+    sources+=("$agent_file")
+    targets+=("$AGENT_DIR/agents/$(basename -- "$agent_file")")
+done
+
 already_linked() {
     [ -L "$2" ] && [ "$(readlink -- "$2")" = "$1" ]
 }
@@ -61,9 +66,12 @@ done
 
 if [ "$INSTALL_PACKAGES" -eq 1 ]; then
     command -v pi >/dev/null || { printf '%s\n' 'Install pi first (for example: mise use --global pi@latest).' >&2; exit 1; }
-    command -v npx >/dev/null || { printf '%s\n' 'Install Node.js/npm first; npx is required for SPARK.' >&2; exit 1; }
     pi install npm:pi-ollama-cloud
-    npx @adityaaria/spark install -g
+    # Native package discovery loads skills/bootstrap globally. The legacy
+    # `spark install -g` writes ~/.pi instead of pi's ~/.pi/agent directory.
+    # Skip SPARK's npm lifecycle installer; pi reads its resource manifest.
+    npm_config_ignore_scripts=true pi install npm:@adityaaria/spark
+    npm_config_ignore_scripts=true pi install npm:pi-subagents@0.67.0
     pi install git:github.com/jonjonrankin/pi-caveman
     pi install npm:pi-vim
     pi install npm:@sentiolabs/pi-frontend-design
