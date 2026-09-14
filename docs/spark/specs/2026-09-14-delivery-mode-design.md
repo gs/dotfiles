@@ -1,6 +1,6 @@
 # Persistent delivery mode
 
-Status: design for review; not implemented.
+Status: native-pi v1 implemented and installed locally. Interaction update: ordinary messages are interpreted by the planning model; requested reviews launch directly, while implementation starts through `delivery_execute` after conversational approval of the displayed plan. The old slash-approval design below is retained as historical context; `pi/README.md` describes current behavior. Checklists are distinct from executable commands; prose is rejected before execution. Available frontend/design skills are selected for UI tasks. See `pi/README.md` for actual commands and limitations, and `pi/tests/delivery-live-smoke.md` for evidence. External CLI execution and automated role qualification are not implemented.
 
 ## Goal and approved direction
 
@@ -12,10 +12,12 @@ The operator should not have to invoke delivery-coder or reviewers manually. An 
 
 ## Proposed user interface
 
-These commands are requirements for the new extension, not existing commands:
+The extension now registers these commands:
 
 - `/delivery setup`: configure exact role/model assignments and allowed provider data boundaries; opt the current repository into automatic activation.
 - `/delivery <feature>`: activate delivery and begin discussion of a feature.
+- `/delivery review [N]`: plan read-only working-tree validation or the last N commits. Commit ranges are pinned; tracked files must match HEAD. After approval, run checks and independent reviewers only; findings stop without coder dispatch or automatic fixes. `/delivery validate last N commits` is equivalent.
+- Internal regular-file symlinks remain covered by the workspace fingerprint, including link identity and target bytes. Escaping/dangling/cyclic/directory links and submodules remain unsupported. No scope exclusion is needed for `CLAUDE.md → AGENTS.md`.
 - `/delivery status`: show stage, selected models, approval and outstanding checks.
 - `/delivery approve`: explicitly approve the displayed plan, workspace and role/model routes.
 - `/delivery off`: explicitly leave delivery mode; never imply that an incomplete task passed.
@@ -31,18 +33,28 @@ The footer reflects recorded runtime state, not a model's prose claim. Caveman's
 
 ## Models and configuration
 
-Planning uses the exact ID `openai-codex/gpt-6-astra`. Activation must select this model before planning turns, or block with an actionable reason. No silent continuation on the global GPT-5.5 default.
+The planning model is an explicit saved route. For this operator, the preferred route is `openai-codex/gpt-6-astra`. Activation must select the approved planning model before planning turns, or block with an actionable reason. No silent continuation on the global GPT-5.5 default. Users without Astra can explicitly approve another discovered planning model during setup; the workflow must not require an OpenAI subscription.
 
 Coder, spec reviewer, quality reviewer and security reviewer routes are explicit saved configuration. Spec and quality may share a model but always use independent fresh sessions. Worker/review selections must be approved, not inferred from names or inherited from the parent. Missing routes mean setup required, not fallback to the current model.
 
-Setup presents actual available models and evidence limitations. Catalog availability is not successful inference or qualification. Unqualified routes require an explicitly approved low-risk evaluation before broader use; banking/security-sensitive production work is not an evaluation fixture. Credentials never enter dotfiles.
+Setup explains each role and shows available model context/output limits, reasoning support, input types and catalog prices. Catalog availability is not successful inference or qualification. No trial/evidence-reference questions or model-qualification execution gate: the operator approves role selections and provider access. Plan approval, tests and independent/security reviews remain mandatory, including for banking work. Legacy trial markers are ignored. Credentials never enter dotfiles.
+
+### Provider-neutral discovery
+
+- Setup queries pi's live model registry, including loaded provider extensions and custom/local models. Support any provider registered with pi, not a hardcoded OpenAI/Ollama list: examples include Anthropic/Claude, OpenAI/Codex, Ollama Cloud and local runtimes.
+- Display exact provider/model IDs and distinguish catalog presence, locally configured authentication, successful inference smoke tests and role qualification. Unknown readiness stays unknown; no claim of access based only on a catalog entry.
+- Do not infer API credentials from an installed Claude Code/Codex CLI or a web subscription. Surface external CLI runners separately through pi-subagents capabilities when available. CLI presence is not authentication, model availability or equivalence to native pi execution; each runner must meet the workflow contract before selection.
+- Reuse pi's credential/provider mechanisms without reading or displaying secret values. Never scan browser sessions or copy credentials into dotfiles, logs or shared configuration.
+- Let users refresh discovery during setup. Refresh local availability on activation and validate the selected route at dispatch. Removed models, expired authentication and unsupported runner capabilities block with a setup/login explanation; they never cause automatic provider/model substitution.
+- Discovery alone must not launch inference. Ask before bounded live probes, disclose potential usage charges and provider data boundaries, and use synthetic non-sensitive inputs. Passing a probe is not role qualification.
+- Group candidates by provider and show available capability/evaluation evidence. Users approve planning, coding and review routes; provider/model names are not quality or price rankings. Preserve valid approved routes when new models appear.
 
 Portable profiles and extension resources live in dotfiles. Machine/repository opt-in and execution state are separate from shared defaults. Do not embed this machine's absolute Quento path in a cross-machine default. The installer must preserve conflicting local resources and support relocated checkouts.
 
 ## Workflow
 
 1. Activation checks dependencies, repository opt-in, model routes and persisted state.
-2. Astra researches the repository and uses SPARK brainstorming and writing-plans. Read-only questions and audits do not require pretending there is an implementation plan.
+2. The approved planning model (Astra for this operator) researches the repository and uses SPARK brainstorming and writing-plans. Read-only questions and audits do not require pretending there is an implementation plan.
 3. For changes, present scope, acceptance criteria, task sequence, workspace, model routes, data boundaries, verification commands and retry limit.
 4. Wait for explicit approval. Scope, workspace or model-route changes invalidate approval.
 5. Dispatch one delivery-coder task using the approved model and fresh bounded context.
@@ -70,6 +82,9 @@ If installed extension APIs cannot enforce a proposed gate, stop and disclose th
 
 - Auto-activation works only in opted-in repositories, including Quento; manual activation works elsewhere.
 - Planning never silently runs on GPT-5.5 when Astra is required.
+- Discovery handles Anthropic-only, OpenAI/Codex-only, mixed cloud/local and custom-provider registries without assuming any one provider is present.
+- Catalog-only entries, missing/expired credentials and installed-but-unauthenticated CLIs are not reported as tested usable models. Discovery does not silently run billable probes or expose credentials.
+- Refresh preserves approved routes; removed models block rather than substitute. An explicitly selected non-Astra planning route works for users without Astra.
 - Missing model/auth/tool prerequisites block execution visibly.
 - No implementation before approval; parent mutation bypass attempts are rejected.
 - Dispatches use the approved model, agent, workspace and fresh context.
@@ -82,4 +97,4 @@ If installed extension APIs cannot enforce a proposed gate, stop and disclose th
 
 ## Next review checkpoint
 
-Review this design, then create the implementation plan against the installed pi and pi-subagents APIs. Exact non-Astra model assignments are a setup decision requiring evidence and operator approval, not hardcoded guesses in this design.
+Implementation plan: `docs/spark/plans/2026-09-14-delivery-mode.md`. Exact role/model assignments remain an operator-approved setup decision informed by available metadata and optional evaluation results, not hardcoded guesses. Astra remains this operator's planning preference. V1 uses the approved existing git workspace rather than automatically creating a worktree; inherited agent configuration and other installed extensions are trusted. No OS sandbox, cross-process writer lock or automatic role qualification is claimed.

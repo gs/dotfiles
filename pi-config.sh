@@ -14,11 +14,11 @@ case "${1:-}" in
     --skills-only) INSTALL_PACKAGES=0 ;;
     --help|-h)
         printf '%s\n' 'Usage: bash pi-config.sh [--skills-only]' \
-            'Installs pi packages and links dotfiles/pi/skills and pi/agents into the pi agent directory.' \
+            'Installs pi packages and links dotfiles/pi skills, agents and extensions into the pi agent directory.' \
             'Links pi/caveman.json to the extension config location (default level: full).' \
             'Respects PI_CODING_AGENT_DIR and Caveman XDG_CONFIG_HOME behavior.' \
             'Existing conflicting files/links are never overwritten.' \
-            '--skills-only links local skills/agents/config without package installs or network calls.'
+            '--skills-only links local skills/agents/extensions/config without package installs or network calls.'
         exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
 esac
@@ -49,6 +49,12 @@ done
 for agent_file in "$DOTFILES_DIR"/pi/agents/*.md; do
     sources+=("$agent_file")
     targets+=("$AGENT_DIR/agents/$(basename -- "$agent_file")")
+done
+
+for extension_entry in "$DOTFILES_DIR"/pi/extensions/*/index.ts; do
+    extension_dir="$(dirname -- "$extension_entry")"
+    sources+=("$extension_dir")
+    targets+=("$AGENT_DIR/extensions/$(basename -- "$extension_dir")")
 done
 
 already_linked() {
