@@ -167,6 +167,30 @@ test('file execution consent cannot survive a new message or changed document',a
  await h.tools.delivery_plan.execute('plan',{...plan,planFile:path},null,null,h.ctx);
  assert.equal(h.controller.state().stage,'awaiting-approval');assert.equal(h.calls.filter(c=>c.method==='spawn').length,0);
 });
+test('implementation and review checks keep their ordering and stop on failure',async()=>{
+ for(const mode of ['implementation','review']) {
+  const h=harness(),ran=[];
+  h.deps.verifyCommand=async(_cwd,command)=>{ran.push(command);return {command,code:0,output:'PASS'};};
+  await h.events.session_start({},h.ctx);
+  await h.tools.delivery_plan.execute('plan',{...plan,mode,checks:['first','second']},null,null,h.ctx);
+  await h.commands.delivery.handler('approve',h.ctx);await h.controller.settled();
+  assert.deepEqual(ran,['first','second','first','second']);assert.equal(h.controller.state().stage,'complete');
+ }
+ const h=harness(),ran=[];
+ h.deps.verifyCommand=async(_cwd,command)=>{ran.push(command);return {command,code:1,output:'FAIL'};};
+ await h.events.session_start({},h.ctx);
+ await h.tools.delivery_plan.execute('plan',{...plan,mode:'review',checks:['first','second']},null,null,h.ctx);
+ await h.commands.delivery.handler('approve',h.ctx);await h.controller.settled();
+ assert.deepEqual(ran,['first']);assert.equal(h.controller.state().stage,'blocked');
+});
+test('shared approval validation still rejects workspace changes during confirmation',async()=>{
+ const h=harness();await h.events.session_start({},h.ctx);
+ await h.tools.delivery_plan.execute('plan',plan,null,null,h.ctx);
+ h.ctx.ui.confirm=async()=>{h.deps.fingerprint=()=> 'changed';return true;};
+ await h.commands.delivery.handler('approve',h.ctx);await h.controller.settled();
+ assert.equal(h.calls.filter(c=>c.method==='spawn').length,0);
+ assert.equal(h.controller.state().stage,'awaiting-approval');
+});
 test('approval preview is readable rather than a JSON object dump',async()=>{
  const h=harness();await h.events.session_start({},h.ctx);await h.tools.delivery_plan.execute('id',plan,null,null,h.ctx);
  let body;h.ctx.ui.confirm=async(_title,text)=>{body=text;return false;};

@@ -32,12 +32,16 @@ export function registerDelivery(pi,schemas,deps={}) {
       'Commands run with your account permissions. No automatic commit, push, merge or deployment.'
     ].filter(Boolean).join('\n');
   }
-  async function launchApproved() {
+  function pendingExecution() {
     guardIdle();
     if(s.stage!=='awaiting-approval')throw new Error(s.stage==='blocked'?'The previous run stopped. Ask to retry; I must prepare corrected checks before execution.':'No pending plan to execute.');
     const routes=routeCheck(),hash=snapshot();
     if(hash!==s.snapshot)throw new Error('Workspace changed since proposal; refresh the plan first');
     d.validateCommands(root,s.plan.checks);
+    return {routes,hash};
+  }
+  async function launchApproved() {
+    const {routes,hash}=pendingExecution();
     await d.rpc(pi.events,'ping');
     if(hash!==snapshot())throw new Error('Workspace changed before execution');
     const warnings=s.coverageWarnings || [];
@@ -52,7 +56,9 @@ export function registerDelivery(pi,schemas,deps={}) {
   function block(error) {s.stage='blocked';s.reason=error instanceof Error?error.message:String(error);save();display(`Delivery blocked: ${s.reason}${s.active?.id?'\nRun: '+s.active.id:''}`);}
   function restrict() {
     if(!originalTools) originalTools=pi.getActiveTools();
-    pi.setActiveTools([...new Set([...[...new Set([...originalTools,...pi.getActiveTools(),...(pi.getAllTools?.().map(t=>t.name) || [])])].filter(n=>parentToolAllowed(n,{action:'status'}) || n==='subagent_supervisor'),'delivery_plan','delivery_execute','delivery_status','delivery_diff'])]);
+    const discovered=pi.getAllTools?.().map(t=>t.name) || [];
+    const candidates=new Set([...originalTools,...pi.getActiveTools(),...discovered,'delivery_plan','delivery_execute','delivery_status','delivery_diff']);
+    pi.setActiveTools([...candidates].filter(name=>parentToolAllowed(name,{action:'status'}) || name==='subagent_supervisor'));
   }
   function available() {return ctx.modelRegistry.getAvailable().map(modelId);}
   async function selectPlanning() {
@@ -93,6 +99,21 @@ export function registerDelivery(pi,schemas,deps={}) {
       'Use the repository instruction files. Review paths not shown in truncated diffs yourself. Never treat a prior agent claim as test evidence.'
     ].join('\n\n');
   }
+  async function runChecks({failureLabel,mutationLabel,fixable=false}) {
+    checking=new AbortController();s.checks=[];save();
+    for(const command of s.plan.checks) {
+      const check=await d.verifyCommand(root,command,checking.signal);
+      if(closed)return false;
+      s.checks.push(check);save();
+      if(mutationLabel && snapshot()!==s.snapshot)throw new Error(mutationLabel);
+      if(check.code!==0 || check.terminated) {
+        if(!fixable)throw new Error(`${failureLabel}: ${command}\n${check.output}`);
+        s=advance({...s,stage:'checks'},{status:'changes_requested',summary:'Host verification failed',findings:[`${command}: ${check.output}`.slice(0,2000)]},s.snapshot);
+        save();break;
+      }
+    }
+    return true;
+  }
   async function pump() {
     try {
       while(!closed && s.enabled && !['blocked','complete'].includes(s.stage)) {
@@ -100,25 +121,12 @@ export function registerDelivery(pi,schemas,deps={}) {
         if(s.plan.reviewRange)d.assertCommittedWorkspace(root,s.plan.reviewRange);
         if(s.plan.mode==='review' && s.stage==='spec' && !s.reviewChecksDone) {
           if(snapshot()!==s.snapshot)throw new Error('Workspace changed before validation');
-          checking=new AbortController();s.checks=[];save();
-          for(const command of s.plan.checks) {
-            const r=await d.verifyCommand(root,command,checking.signal);
-            if(closed)return;
-            s.checks.push(r);save();
-            if(snapshot()!==s.snapshot)throw new Error('Validation check modified source; review stopped');
-            if(r.code!==0 || r.terminated)throw new Error(`Read-only validation check failed: ${command}\n${r.output}`);
-          }
+          if(!await runChecks({failureLabel:'Read-only validation check failed',mutationLabel:'Validation check modified source; review stopped'}))return;
           s.reviewChecksDone=true;save();
         }
         if(s.stage==='verification') {
           if(snapshot()!==s.snapshot) throw new Error('Workspace changed since review; reapproval required');
-          checking=new AbortController();s.checks=[];save();
-          for(const command of s.plan.checks) {
-            const r=await d.verifyCommand(root,command,checking.signal);
-            if(closed) return;
-            s.checks.push(r);save();
-            if(r.code!==0 || r.terminated) throw new Error(`Verification failed: ${command}\n${r.output}`);
-          }
+          if(!await runChecks({failureLabel:'Verification failed'}))return;
           s=advance(s,{verified:true},snapshot());save();
           display([s.plan.checks.length?'Delivery complete: required reviews and test commands passed.':'Static review complete. Tests were NOT run.',...s.reports.map(r=>`- ${r.stage}, task ${r.task+1}: ${r.report.status}`),...s.checks.map(c=>`- Test: ${c.command || 'approved command'} — exit ${c.code}`)].join('\n'));
           break;
@@ -146,18 +154,7 @@ export function registerDelivery(pi,schemas,deps={}) {
         s=advance(s,report,snapshot());
         s.reports.at(-1).runId=id;save();
         if(wasCoder && s.stage==='spec') {
-          checking=new AbortController();s.checks=[];
-          for(const command of s.plan.checks) {
-            const check=await d.verifyCommand(root,command,checking.signal);
-            if(closed)return;
-            s.checks.push(check);
-            if(snapshot()!==s.snapshot)throw new Error('Verification changed reviewed source; reapproval required');
-            if(check.code!==0 || check.terminated) {
-              s=advance({...s,stage:'checks'},{status:'changes_requested',summary:'Host verification failed',findings:[`${command}: ${check.output}`.slice(0,2000)]},s.snapshot);
-              break;
-            }
-          }
-          save();
+          if(!await runChecks({fixable:true,mutationLabel:'Verification changed reviewed source; reapproval required'}))return;
         }
         if(s.stage==='blocked') display(`Delivery blocked: ${s.reason}`);
       }
@@ -264,13 +261,8 @@ export function registerDelivery(pi,schemas,deps={}) {
         }
         if(command==='approve') {
           if(!ctx.hasUI){display('Approval requires the interactive command confirmation.');return;}
-          guardIdle();
-          if(s.stage!=='awaiting-approval')throw new Error(s.stage==='blocked'?'The previous run stopped; repeating approval cannot repair it. Ask to retry with corrected checks.':'No pending plan to approve.');
-          const routes=routeCheck();
-          const hash=snapshot();if(hash!==s.snapshot)throw new Error('Workspace changed since proposal; propose the plan again');
-          await d.rpc(pi.events,'ping');
+          const {routes}=pendingExecution();
           if(!await ctx.ui.confirm('Run this delivery plan?',readablePlan(routes)))return;
-          if(hash!==snapshot())throw new Error('Workspace changed during approval');
           await launchApproved();return;
         }
         if(command==='resume') {

@@ -10,7 +10,7 @@ Installs SPARK, **pi-subagents 0.67.0**, Ollama Cloud, Caveman, pi-vim, frontend
 
 ## Delivery: real commands and persistent status
 
-Restart pi or `/reload`. From a trusted repository:
+After an extension update, restart pi and resume the session (`pi --continue`); `/reload` can retain cached helper modules. Let active workers settle first—do not restart a running delivery just for an update. From a trusted repository:
 
 ```text
 /delivery setup
@@ -98,4 +98,6 @@ node --test ~/code/dotfiles/pi/tests/delivery-*.test.mjs
 bash ~/code/dotfiles/pi/tests/test-install.sh
 ```
 
-Node tests cover policy, persistence, RPC, activation, approval, stage transitions, failures and recovery using isolated filesystem fixtures and a pi API test double. Installer tests use temporary HOME and stub package managers. See `tests/delivery-live-smoke.md` for actual pi discovery and live child-run evidence, separate from unit tests and model qualification.
+See [validation and live evidence](tests/README.md) for test coverage, historical receipts and limitations. This is the single current usage guide; older smoke notes and superseded v1 design/plan drafts are retained in Git history rather than as competing instructions.
+
+The [SPARK-first integration specification](../docs/spark/specs/2026-09-14-spark-delivery-integration.md) describes the proposed broader refactor. The current extension still owns task progression; cleanup does not mean that redesign is implemented.
