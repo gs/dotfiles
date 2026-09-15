@@ -57,7 +57,29 @@ A footer shows `Delivery OFF`, `Delivery ON · <stage> · <model>`, or `Delivery
 
 Say “validate the last two commits” normally. Internally the planner selects `mode=review` and dispatches checks and fresh spec/quality/security reviewers directly, **never a coder or automatic fixes**. Planning-only requests use `start=false`. Failed checks or findings stop the run; a repeated approval cannot repair a failed run. Ask to retry and the planner prepares corrected checks. Review criteria belong in task acceptance, not shell commands. Command syntax and executable lookup are checked before accepting a plan; this catches checklist prose but is not a shell safety proof. Static reviews may have no commands and explicitly report tests not run. Commit review pins a first-parent base/HEAD range and requires tracked files to match HEAD; untracked files stay outside the committed review scope. The parent can page through `delivery_diff` with `commits` and `offset`; reviewers receive the full patch in a private temporary file, not only a truncated preview. Temporary patches contain project code and remain in the system temp directory until cleaned up. Approved tests can have side effects; this is not a filesystem sandbox.
 
-Reload/resume does not replay an uncertain launch. Retained children require `/delivery resume`; launch ambiguity requires inspecting subagent status. Stopped/failed work is never labeled complete. Keep the parent open for progress and supervisor interaction.
+Reload/resume does not replay an uncertain launch. Ask to continue retained work (the planner uses `delivery_resume`), or use `/delivery resume`;  launch ambiguity requires inspecting subagent status. Stopped/failed work is never labeled complete. Keep the parent open for progress and supervisor interaction.
+
+### Time budgets and recovery
+
+Default coding allowance is 45 minutes per attempt, plus one continuation of up to 15 minutes after a confirmed timeout. All coding attempts and review-requested fixes share a 60-minute total per task. Reviews get 15 minutes per run; host checks retain their 2-minute limit.
+
+A five-minute inactivity warning is informational, not a provider-outage diagnosis. Quiet running tools are not classified as idle. Near the deadline, delivery asks the worker to prioritize verification and leave a precise handoff. Native pi-subagents still enforces the hard deadline.
+
+After a coding timeout, delivery waits for runner closure, verifies model evidence and preserves partial changes. One fresh-context continuation receives the previous logs and approved scope; independent reviews still follow. It does **not** use native resume: pi-subagents 0.67.0's resume RPC drops timeout overrides. Uncertain launches/termination and arbitrary failures never trigger replacement writers. Changed routes or legacy budgets require one explicit recovery confirmation, rather than replacing the plan while its old run is retained.
+
+Optional `timeouts` in `~/.pi/agent/delivery.json` (milliseconds):
+
+```json
+"timeouts": {
+  "coderMs": 2700000,
+  "continuationMs": 900000,
+  "reviewMs": 900000,
+  "idleWarningMs": 300000,
+  "deadlineWarningMs": 300000
+}
+```
+
+Values must be whole milliseconds from one minute to two hours; `continuationMs: 0` disables continuation. The policy is bound to approval. Exhausting the allowance requires a new approved budget/plan, not an unlimited retry loop.
 
 ## Provider discovery
 
@@ -72,7 +94,7 @@ Installed Claude Code, Codex and Cursor CLIs are listed separately by executable
 - Uses the explicitly approved current git workspace. Does not automatically create worktrees; create/select one first when isolation is needed. Do not run concurrent writers in the same workspace.
 - Workspace fingerprints cover tracked and non-ignored untracked files, HEAD and git status. Changes outside a writer invalidate review progression. Ignored files, external services and production state are not covered. Internal symlinks to regular files are fingerprinted with their link text and target content (including `CLAUDE.md → AGENTS.md`). External, dangling, cyclic and directory links outside the declared task/check scope produce coverage warnings instead of blocking. Their link identity remains monitored; their target contents are not read or covered. Out-of-scope Git submodule references are also monitored without claiming coverage of nested contents. Directly required links/nested repositories still block until their dependency/scope is resolved. Symlink ancestors of ordinary source paths remain unsupported. This is not transitive dependency analysis or a sandbox. Limit: 50,000 files / 256 MiB.
 - Risk/path detection is conservative, not a complete security classifier. Mark uncertain or sensitive plans high risk so security review cannot be skipped.
-- Child deadline: 15 minutes; each approved host check: 2 minutes. Timeout stops progression. Output is bounded; original child artifacts remain under pi-subagents' run directories.
+- Finite child deadlines and bounded coding continuation as described above; each approved host check: 2 minutes. Output is bounded; original child artifacts remain under pi-subagents' run directories.
 - Pi-subagents documents standalone support for Linux x64. A full local fixture flow passed on this machine's **Pi 0.85.1 Linux ARM64 standalone**; that is local evidence, not general upstream ARM64 support.
 
 The abandoned custom delivery runtime is not used or installed.

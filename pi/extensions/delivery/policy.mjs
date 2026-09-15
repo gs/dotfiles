@@ -39,10 +39,26 @@ export function validatePlan(input) {
   return p;
 }
 export function parentToolAllowed(name, input) {
-  if (['read','grep','find','ls','delivery_plan','delivery_execute','delivery_status','delivery_diff'].includes(name)) return true;
+  if (['read','grep','find','ls','delivery_plan','delivery_execute','delivery_resume','delivery_status','delivery_diff'].includes(name)) return true;
   if (name==='subagent') return ['status','list','get','models','guide','doctor','children.list'].includes(input?.action);
   // Supervisor responses are handled by the user, not an LLM able to authorize scope changes.
   return name==='subagent_supervisor' && ['pending','list'].includes(input?.action);
+}
+export function timeoutPolicy(input={}) {
+  const defaults={coderMs:45*60000,continuationMs:15*60000,reviewMs:15*60000,idleWarningMs:5*60000,deadlineWarningMs:5*60000};
+  check(input && typeof input==='object' && !Array.isArray(input),'Invalid timeout configuration');
+  for(const key of Object.keys(input))check(Object.hasOwn(defaults,key),`Unknown timeout setting: ${key}`);
+  const p={...defaults,...input};
+  for(const [key,value] of Object.entries(p))check(Number.isSafeInteger(value) && value>=(key==='continuationMs'?0:60000) && value<=2*60*60000,`Invalid timeout setting: ${key}`);
+  return p;
+}
+export function attemptBudget(policy,stage,spentMs=0,continuation=false) {
+  check(Number.isFinite(spentMs) && spentMs>=0,'Invalid recorded coding time');
+  if(stage!=='coder')return policy.reviewMs;
+  const remaining=policy.coderMs+policy.continuationMs-spentMs;
+  const budget=Math.min(continuation?policy.continuationMs:policy.coderMs,remaining);
+  check(budget>0,'Coding task budget exhausted; a new budget needs explicit approval');
+  return budget;
 }
 export function initialState() {
   return {version:1,enabled:false,stage:'planning',task:0,round:0,plan:null,routes:null,snapshot:null,active:null,reports:[],feedback:'',reason:''};

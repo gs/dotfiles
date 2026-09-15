@@ -122,6 +122,20 @@ export function isSettled(active) {
   const t=jsonFile(path);
   return t.runId===active.id && t.state==='observed' && t.instances?.length>0;
 }
+export function runProgress(active) {
+  const s=jsonFile(join(active.dir,'status.json'));
+  if(s.runId!==active.id)throw new Error('Run identity mismatch');
+  const step=s.steps?.[0] || {};
+  const terminal=['failed','stopped','complete','paused','blocked'].includes(s.state);
+  const end=s.endedAt ?? (terminal?s.lastUpdate:undefined);
+  return {state:s.state,model:step.model,attemptedModels:step.attemptedModels,
+    timedOut:s.state==='failed' && (s.timedOut===true || step.timedOut===true || /^Subagent timed out after \d+ms\.$/.test(s.error || '')),
+    timeoutMs:s.timeoutMs,deadlineAt:s.deadlineAt,startedAt:s.startedAt,
+    durationMs:Number.isFinite(end)&&Number.isFinite(s.startedAt)?Math.max(0,end-s.startedAt):undefined,
+    lastActivityAt:step.lastActivityAt ?? s.lastActivityAt,
+    currentTool:step.currentTool || s.currentTool,
+    sessionFiles:[step.sessionFile,step.transcriptPath].filter(p=>typeof p==='string' && isAbsolute(p) && !p.includes('\0'))};
+}
 export function readOutcome(active) {
   const s=jsonFile(join(active.dir,'status.json'));
   if(s.runId!==active.id) throw new Error('Run identity mismatch');

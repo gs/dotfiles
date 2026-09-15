@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {registerDelivery} from '../extensions/delivery/extension.mjs';
+import {timeoutPolicy} from '../extensions/delivery/policy.mjs';
 const routes={planning:'openai-codex/gpt-6-astra',coder:'custom/c',spec:'custom/r',quality:'custom/r',security:'custom/s'};
 const plan={title:'Fixture',tasks:[{title:'Add',instructions:'Add one',files:['a'],acceptance:['works']}],checks:['node --test'],risk:'low',security:true};
 function harness(config={version:1,routes,evidence:{},repos:['/repo']}) {
@@ -9,7 +10,7 @@ function harness(config={version:1,routes,evidence:{},repos:['/repo']}) {
  const models=[...new Set(Object.values(routes))].map(s=>{const [provider,...id]=s.split('/');return {provider,id:id.join('/')};});
  const ctx={cwd:'/repo',hasUI:true,mode:'tui',isIdle:()=>true,isProjectTrusted:()=>true,modelRegistry:{getAll:()=>models,getAvailable:()=>models},get model(){return model;},sessionManager:{getSessionId:()=> 'session',getBranch:()=>entries},ui:{setStatus:(k,v)=>statuses.push(v),notify:()=>{},confirm:async()=>true,select:async(t,opts)=>opts[0],input:async()=> 'trial'}};
  const pi={on:(e,h)=>events[e]=h,registerCommand:(n,c)=>commands[n]=c,registerTool:t=>tools[t.name]=t,appendEntry:(customType,data)=>entries.push({type:'custom',customType,data:structuredClone(data)}),setModel:async m=>{model=m;return true;},sendMessage:m=>messages.push(m),sendUserMessage:m=>messages.push(m),getActiveTools:()=>['read','bash','edit','write','delivery_plan'],setActiveTools:()=>{},events:{}};
- const deps={configPath:()=>'/unused',loadConfig:()=>structuredClone(config),saveConfig:(_,c)=>Object.assign(config,c),repoRoot:()=>'/repo',fingerprint:()=> 'hash',diff:()=> 'diff',reviewPatch:()=>'/fake/full.diff',validateCommands:()=>{},verifyCommand:async()=>({code:0,output:'PASS'}),rpc:async(_e,method,params)=>{calls.push({method,params});return method==='spawn'?{details:{runId:'r'+calls.length,asyncDir:'/fake'}}:{};},readOutcome:()=>({status:'approved',summary:'ok',findings:[]}),pollMs:1,child:false};
+ const deps={configPath:()=>'/unused',loadConfig:()=>structuredClone(config),saveConfig:(_,c)=>Object.assign(config,c),repoRoot:()=>'/repo',fingerprint:()=> 'hash',diff:()=> 'diff',reviewPatch:()=>'/fake/full.diff',validateCommands:()=>{},runProgress:()=>null,verifyCommand:async()=>({code:0,output:'PASS'}),rpc:async(_e,method,params)=>{calls.push({method,params});return method==='spawn'?{details:{runId:'r'+calls.length,asyncDir:'/fake'}}:{};},readOutcome:()=>({status:'approved',summary:'ok',findings:[]}),pollMs:1,child:false};
  const controller=registerDelivery(pi,{plan:{},empty:{}},deps);
  return {pi,ctx,events,commands,tools,entries,statuses,messages,calls,controller,deps,config};
 }
@@ -190,6 +191,78 @@ test('shared approval validation still rejects workspace changes during confirma
  await h.commands.delivery.handler('approve',h.ctx);await h.controller.settled();
  assert.equal(h.calls.filter(c=>c.method==='spawn').length,0);
  assert.equal(h.controller.state().stage,'awaiting-approval');
+});
+test('confirmed coder timeout continues once on the exact model after runner closure',async()=>{
+ const h=harness();let now=0,attempt=0,proofChecks=0;
+ h.deps.now=()=>now;
+ h.deps.runProgress=active=>{
+  if(active.stage!=='coder' || attempt>0)return null;
+  now=45*60000;return {state:'failed',timedOut:true,model:routes.coder,attemptedModels:[routes.coder],sessionFiles:[],durationMs:45*60000};
+ };
+ h.deps.isSettled=()=>{proofChecks++;if(proofChecks===1)return false;attempt=1;return true;};
+ await h.events.session_start({},h.ctx);await h.tools.delivery_plan.execute('plan',plan,null,null,h.ctx);
+ await h.commands.delivery.handler('approve',h.ctx);await h.controller.settled();
+ const coders=h.calls.filter(c=>c.method==='spawn'&&c.params.agent==='delivery-coder');
+ assert.equal(coders.length,2);assert.equal(coders[0].params.timeoutMs,45*60000);assert.equal(coders[1].params.timeoutMs,15*60000);
+ assert.ok(coders.every(c=>c.params.model===routes.coder));assert.match(coders[1].params.task,/partial.*verification|verify.*partial/i);
+ assert.equal(h.controller.state().stage,'complete');assert.ok(proofChecks>=2);
+});
+test('second timeout stops; no infinite restart loop',async()=>{
+ const h=harness();h.deps.isSettled=()=>true;
+ h.deps.runProgress=a=>({state:'failed',timedOut:true,model:a.model,attemptedModels:[a.model],durationMs:a.budgetMs,sessionFiles:[]});
+ await h.events.session_start({},h.ctx);await h.tools.delivery_plan.execute('plan',plan,null,null,h.ctx);
+ await h.commands.delivery.handler('approve',h.ctx);await h.controller.settled();
+ assert.equal(h.controller.state().stage,'blocked');assert.equal(h.calls.filter(c=>c.method==='spawn').length,2);
+ assert.match(h.controller.state().reason,/continuation|budget/i);
+});
+test('worker instructions keep positive evidence out of actionable findings',async()=>{
+ const h=harness();await h.events.session_start({},h.ctx);await h.tools.delivery_plan.execute('plan',plan,null,null,h.ctx);
+ await h.commands.delivery.handler('approve',h.ctx);await h.controller.settled();
+ assert.match(h.calls.find(c=>c.method==='spawn').params.task,/approved requires findings=\[\]/);
+});
+for(const approved of [false,true])test(`changed routes recover a closed timeout only with confirmation (${approved})`,async()=>{
+ const h=harness();h.config.routes={...routes,coder:routes.spec};
+ h.entries.push({type:'custom',customType:'delivery-mode-v1',data:{version:1,enabled:true,stage:'blocked',task:0,round:0,plan,routes,snapshot:'hash',active:{id:'old',dir:'/fake',model:routes.coder,stage:'coder'},reports:[],reason:'Routes changed',workspace:'/repo',owner:'session'}});
+ h.deps.isSettled=()=>true;
+ h.deps.runProgress=a=>a.id==='old'?{state:'failed',timedOut:true,model:routes.coder,attemptedModels:[routes.coder],timeoutMs:900000,durationMs:900000,sessionFiles:['/fake/prior.jsonl']}:null;
+ let prompt='';h.ctx.ui.confirm=async(_title,text)=>{prompt=text;return approved;};
+ await h.events.session_start({},h.ctx);
+ const resume=h.tools.delivery_resume.execute('resume',{},null,null,h.ctx);
+ if(approved){await resume;await h.controller.settled();assert.equal(h.controller.state().stage,'complete');assert.equal(h.calls.find(c=>c.method==='spawn').params.model,routes.spec);}
+ else{await assert.rejects(resume,/not approved/);assert.equal(h.calls.filter(c=>c.method==='spawn').length,0);assert.equal(h.controller.state().routes.coder,routes.coder);}
+ assert.match(prompt,/custom\/c → custom\/r/);assert.match(prompt,/partial/);
+});
+test('restart between timeout closure and dispatch retains the single continuation grant',async()=>{
+ const h=harness();h.config.routes={...routes,coder:routes.spec};
+ h.entries.push({type:'custom',customType:'delivery-mode-v1',data:{version:1,enabled:true,stage:'coder',task:0,round:0,plan,routes,timeouts:timeoutPolicy(),snapshot:'hash',active:null,pendingContinuation:true,coding:{0:{spentMs:45*60000,continuations:1}},reports:[],reason:'',workspace:'/repo',owner:'session'}});
+ await h.events.session_start({},h.ctx);await h.tools.delivery_resume.execute('resume',{},null,null,h.ctx);await h.controller.settled();
+ assert.equal(h.controller.state().stage,'complete');assert.equal(h.controller.state().coding[0].continuations,1);
+ const launch=h.calls.find(c=>c.method==='spawn');assert.equal(launch.params.model,routes.spec);assert.equal(launch.params.timeoutMs,15*60000);
+});
+test('quiet running tools are not classified as idle or stopped',async()=>{
+ const h=harness();let now=0;h.deps.now=()=>now;
+ h.deps.runProgress=a=>{if(a.stage!=='coder')return null;now=10*60000;return {state:'running',lastActivityAt:0,currentTool:'bash',deadlineAt:45*60000};};
+ await h.events.session_start({},h.ctx);await h.tools.delivery_plan.execute('plan',plan,null,null,h.ctx);
+ await h.commands.delivery.handler('approve',h.ctx);await h.controller.settled();
+ assert.equal(h.controller.state().stage,'complete');assert.ok(!h.messages.some(m=>m.content?.includes('No recent recorded')));
+ assert.equal(h.calls.filter(c=>c.method==='stop').length,0);
+});
+test('near-deadline steer is sent once; inactivity only warns',async()=>{
+ const h=harness();let now=0,reads=0;h.deps.now=()=>now;
+ h.deps.runProgress=a=>{if(a.stage!=='coder')return null;now=41*60000;return {state:'running',lastActivityAt:0,deadlineAt:45*60000};};
+ h.deps.readOutcome=()=>++reads===1?null:{status:'approved',summary:'ok',findings:[]};
+ await h.events.session_start({},h.ctx);await h.tools.delivery_plan.execute('plan',plan,null,null,h.ctx);
+ await h.commands.delivery.handler('approve',h.ctx);await h.controller.settled();
+ assert.equal(h.calls.filter(c=>c.method==='steer').length,1);assert.equal(h.calls.filter(c=>c.method==='stop').length,0);
+ assert.equal(h.messages.filter(m=>m.content?.includes('No recent recorded')).length,1);
+});
+test('model-mismatched timed-out runs cannot obtain continuation authority',async()=>{
+ const h=harness();h.deps.isSettled=()=>true;
+ h.deps.runProgress=()=>({state:'failed',timedOut:true,model:'other/model',attemptedModels:['other/model'],durationMs:900000});
+ await h.events.session_start({},h.ctx);await h.tools.delivery_plan.execute('plan',plan,null,null,h.ctx);
+ await h.commands.delivery.handler('approve',h.ctx);await h.controller.settled();
+ assert.equal(h.controller.state().stage,'blocked');assert.match(h.controller.state().reason,/model evidence/);
+ assert.equal(h.calls.filter(c=>c.method==='spawn').length,1);
 });
 test('approval preview is readable rather than a JSON object dump',async()=>{
  const h=harness();await h.events.session_start({},h.ctx);await h.tools.delivery_plan.execute('id',plan,null,null,h.ctx);

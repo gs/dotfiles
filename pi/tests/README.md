@@ -22,8 +22,25 @@ The Node tests use isolated filesystem fixtures and a pi API test double; they d
 | `delivery-recovery.test.mjs` | Interrupted/failed runs, stale source, failed checks and timeouts |
 | `delivery-review.test.mjs` | Pinned commit diffs, full patches, symlink/gitlink coverage and document identity |
 | `delivery-setup.test.mjs` | Model-picker metadata and honest unknown pricing |
+| `delivery-timeouts.test.mjs` | Finite budget policy and native timeout/activity evidence |
 
 These tests do not prove semantic compliance with every user instruction or SPARK skill. Check commands have account privileges; syntax/executable lookup is not a sandbox or proof of test coverage.
+
+## Timeout recovery evidence recorded on 2026-09-15
+
+A disposable two-file fixture used approved one-minute attempt/continuation budgets. Real Astra planning adopted the saved plan. GLM-5.3-Flash wrote a checkpoint and deliberately slept past its native deadline. After confirmed closure, one fresh GLM-5.3-Flash continuation read the prior logs, preserved the checkpoint, completed the remaining file and passed host verification. DeepSeek spec and Kimi quality reviewers then approved; final state was `complete`.
+
+- Timed-out attempt: `f4b770c5-c99e-442f-963b-2bf3387fe065`
+- Continuation: `76ae6798-adb5-4afb-8f74-a77b76ff94fb`
+- Spec: `b7a9fc6f-833d-42ec-b471-c676616b67f2`
+- Quality: `4b013d5d-749b-40e9-94b6-e9a57b79c9dc`
+- Receipts: `/tmp/delivery-timeout-check-pbgfdc3d/{state.json,events.jsonl}`; disposable driver `/tmp/check-delivery-timeout-flow.py`.
+
+The first fixture (`/tmp/delivery-timeout-check-3stpptoh`) correctly blocked an inconsistent approved report containing informational findings. Worker instructions were clarified: positive evidence goes in summary; approved requires an empty findings array. The report gate was not weakened.
+
+An independent Kimi static review (`74cfb3cc-87e5-40bf-89dd-aef2042ac551`) reported approved with no findings; it did not run tests. Its native status/steer uncertainties are covered by the live timeout fixture, not by the static review itself.
+
+Route-change consent, rejected consent, cumulative budgets, second-timeout blocking, quiet-tool warnings and restart-between-closure-and-dispatch are regression-tested using the API double. This fixture does not establish real 45-minute workload behavior or resume Quento's banking task. Quento files and saved routes were not modified by this repair.
 
 ## Live evidence recorded on 2026-09-14
 
