@@ -3,7 +3,7 @@
 #
 #   +-------------+-----------------+
 #   |  nvim       |                 |
-#   +-------------+   claude        |
+#   +-------------+   pi            |
 #   |  terminal   |   full height   |
 #   +-------------+-----------------+
 #
@@ -17,7 +17,7 @@
 #   TDL_LEFT_WIDTH   width of the left column, percent    (default 40)
 #   TDL_TOP_HEIGHT   height of the top-left pane, percent (default 60)
 #   TDL_EDITOR       command for the top-left pane        (default nvim)
-#   TDL_RIGHT        command for the right pane           (default claude)
+#   TDL_RIGHT        command for the right pane           (default pi)
 #   TDL_NO_LAUNCH    set to any value to only arrange panes, launching nothing
 
 set -u
@@ -25,7 +25,7 @@ set -u
 LEFT_WIDTH="${TDL_LEFT_WIDTH:-40}"
 TOP_HEIGHT="${TDL_TOP_HEIGHT:-60}"
 EDITOR_CMD="${TDL_EDITOR:-nvim}"
-RIGHT_CMD="${TDL_RIGHT:-claude}"
+RIGHT_CMD="${TDL_RIGHT:-pi}"
 
 panes=$(tmux list-panes | wc -l)
 
@@ -65,4 +65,5 @@ launch_if_idle() {
 launch_if_idle "$top_left" "$EDITOR_CMD"
 launch_if_idle "$right" "$RIGHT_CMD"
 
-tmux select-pane -t "$top_left"
+# Focus the pane running the agent (pi) so it is in the foreground.
+tmux select-pane -t "$right"

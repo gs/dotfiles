@@ -1,5 +1,6 @@
-mise use -g pi
-pi install npm:pi-spark
-pi install npm:pi-browser-control
-pi install npm:@sentiolabs/pi-frontend-design
-pi install npm:pi-ollama-cloud
+pi install npm:pi-browser-control   # browser automation (playwright) for the agent
+pi install npm:@sentiolabs/pi-frontend-design  # frontend design skill for polished UIs
+pi install npm:pi-ollama-cloud      # Ollama Cloud models + web search/fetch tools
+pi install npm:pi-mcp-adapter       # MCP server support (tool search/call bridge)
+pi install npm:pi-subagents         # subagent dispatch, workflows, parallel review
+pi install npm:@adityaaria/spark    # THE spark flow: skills + session bootstrap
