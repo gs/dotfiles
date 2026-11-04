@@ -11,6 +11,10 @@
 # build-packages.sh passes OMARCHY_SRC to makepkg and the PKGBUILD honours it,
 # so the build comes from that tree rather than the pinned upstream commit.
 #
+# Local commits (e.g. workarounds not yet upstream) are kept: the checkout is
+# rebased onto its upstream rather than fast-forwarded. A rebase that would
+# conflict is detected before anything changes, and aborted if it happens.
+#
 # Usage:
 #   rebuild-omarchy --check        report how far behind, change nothing
 #   rebuild-omarchy                pull, build, install, verify
@@ -34,7 +38,7 @@ for arg in "$@"; do
     --yes | -y) assume_yes=1 ;;
     --force) force=1 ;;
     --no-snapshot) snapshot=0 ;;
-    -h | --help) sed -n '2,25p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    -h | --help) sed -n '2,/^$/{/^#/p}' "$0" | sed 's/^# \?//'; exit 0 ;;
     *) printf 'Unknown option: %s (try --help)\n' "$arg" >&2; exit 2 ;;
   esac
 done
@@ -62,19 +66,35 @@ behind=$(git -C "$CHECKOUT" rev-list --count "HEAD..$upstream")
 ahead=$(git -C "$CHECKOUT" rev-list --count "$upstream..HEAD")
 dirty=$(git -C "$CHECKOUT" status --porcelain)
 
+# Three-dot diffs (merge-base..upstream) show only what upstream brings in.
+# A two-dot diff against HEAD would also list our own local commits, reversed,
+# as if they were incoming.
+
 # Migrations run automatically during `omarchy update`, so they are the only
 # part of an incoming diff that can change this system without being asked.
-new_migrations=$(git -C "$CHECKOUT" diff --name-only "HEAD..$upstream" -- migrations/ | wc -l)
+new_migrations=$(git -C "$CHECKOUT" diff --name-only "HEAD...$upstream" -- migrations/ | wc -l)
+
+# Will our local commits replay cleanly on top of upstream?
+rebase_ok=1
+if ((ahead > 0 && behind > 0)); then
+  git -C "$CHECKOUT" merge-tree --write-tree "$upstream" HEAD >/dev/null 2>&1 || rebase_ok=0
+fi
 
 printf '\n'
 printf '  checkout   %s\n' "$CHECKOUT"
 printf '  branch     %s -> %s\n' "$branch" "$upstream"
 printf '  behind     %s commit(s)\n' "$behind"
-printf '  ahead      %s commit(s)\n' "$ahead"
+printf '  ahead      %s local commit(s)%s\n' "$ahead" "$( ((rebase_ok)) || echo ' — CONFLICT with upstream')"
 printf '  worktree   %s\n' "$([[ -z $dirty ]] && echo clean || echo 'MODIFIED')"
 printf '  migrations %s new\n' "$new_migrations"
 printf '  installed  %s\n' "$(pacman -Q omarchy 2>/dev/null || echo 'not installed')"
 printf '\n'
+
+if ((ahead > 0)); then
+  green "Local commits (kept, replayed on top of upstream)"
+  git -C "$CHECKOUT" log --format='  %h %ad  %s' --date=short "$upstream..HEAD"
+  printf '\n'
+fi
 
 if ((behind > 0)); then
   green "Incoming commits"
@@ -84,7 +104,7 @@ if ((behind > 0)); then
   ((behind > 20)) && printf '  ... and %s more\n' "$((behind - 20))" || true
   printf '\n'
   green "Changed files that ship on this system (excluding tests)"
-  git -C "$CHECKOUT" diff --name-status "HEAD..$upstream" |
+  git -C "$CHECKOUT" diff --name-status "HEAD...$upstream" |
     grep -vE '^[A-Z]+[[:space:]]+tests?/' | sed 's/^/  /' || true
   printf '\n'
 fi
@@ -96,7 +116,7 @@ fi
 # --- decide whether there is work to do --------------------------------------
 
 [[ -z $dirty ]] || fail "Worktree has local changes. Commit or stash them first."
-((ahead == 0)) || fail "Branch is $ahead commit(s) ahead of $upstream; pull would not fast-forward."
+((rebase_ok)) || fail "Local commits conflict with $upstream. Resolve by hand: git -C $CHECKOUT rebase $upstream"
 
 if ((behind == 0 && force == 0)); then
   green "Already up to date. Use --force to rebuild anyway."
@@ -121,9 +141,16 @@ fi
 
 # --- pull --------------------------------------------------------------------
 
-green "Pulling $upstream"
-git -C "$CHECKOUT" pull --ff-only
+# Already fetched above. With no local commits this is a plain fast-forward.
+pre_rebase=$(git -C "$CHECKOUT" rev-parse HEAD)
+green "Rebasing onto $upstream"
+if ! git -C "$CHECKOUT" rebase "$upstream"; then
+  git -C "$CHECKOUT" rebase --abort 2>/dev/null || true
+  fail "Rebase failed and was aborted; checkout left at ${pre_rebase:0:9}."
+fi
 green "Now at $(git -C "$CHECKOUT" log --oneline -1)"
+((ahead == 0)) || printf '  previous HEAD %s (undo: git -C %s reset --hard %s)\n' \
+  "${pre_rebase:0:9}" "$CHECKOUT" "${pre_rebase:0:9}"
 
 # --- build -------------------------------------------------------------------
 
@@ -179,6 +206,25 @@ if [[ -n $(find /usr/share/omarchy/bin -maxdepth 1 -newermt "@$build_started" -p
 else
   printf '  \033[31mFAIL\033[0m /usr/share/omarchy/bin looks untouched — the install may not have applied\n'
   status=1
+fi
+
+# Local commits are the part upstream cannot vouch for: check each file they
+# touch landed in the installed tree exactly as it is in the checkout.
+if ((ahead > 0)); then
+  mismatched=0 compared=0
+  while IFS= read -r f; do
+    [[ -e /usr/share/omarchy/$f ]] || continue
+    compared=$((compared + 1))
+    cmp -s "$CHECKOUT/$f" "/usr/share/omarchy/$f" || {
+      mismatched=$((mismatched + 1))
+      printf '  \033[31mFAIL\033[0m local change not installed: %s\n' "$f"
+    }
+  done < <(git -C "$CHECKOUT" diff --name-only "$upstream..HEAD")
+  if ((mismatched)); then
+    status=1
+  else
+    printf '  \033[32mok\033[0m   %s file(s) from local commits installed as in the checkout\n' "$compared"
+  fi
 fi
 
 if ((new_migrations > 0)); then
