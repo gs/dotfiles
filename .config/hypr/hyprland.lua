@@ -28,6 +28,10 @@ require("default.hypr.toggles")
 -- Add any other personal Hyprland configuration below.
 -- o.window("qemu", { workspace = "5" })
 
+-- Pin web apps to fixed workspaces (exact class match so sibling windows on the
+-- same domain -- Nextcloud __nc_, agenty-desk __DEL_ -- are not caught).
+o.window({ class = "^chrome-box.tail67a3be.ts.net__-Default$" }, { workspace = "3" }) -- Agenty
+
 -- Brightness keys drive the laptop panel, not the Touch Bar.
 --
 -- /sys/class/backlight holds 228600000.dsi.0 (Touch Bar) and apple-panel-bl

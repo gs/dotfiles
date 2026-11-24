@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Usage:
+#   deploy                              -> bundle exec kamal deploy
+#   deploy staging                      -> bundle exec kamal deploy -d staging
+#   deploy production                   -> bundle exec kamal deploy -d production
+#   deploy production --skip-push       -> bundle exec kamal deploy -d production --skip-push
+#   deploy --skip-push                  -> bundle exec kamal deploy --skip-push
+
+ENV=""
+if [[ $# -gt 0 && "$1" != -* ]]; then
+  ENV="$1"
+  shift
+fi
+
+if [[ -z "$ENV" ]]; then
+  echo "+ bundle exec kamal deploy $*"
+  bundle exec kamal deploy "$@"
+else
+  echo "+ bundle exec kamal deploy -d $ENV $*"
+  bundle exec kamal deploy -d "$ENV" "$@"
+fi

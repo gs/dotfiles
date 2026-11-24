@@ -1,0 +1,389 @@
+#!/usr/bin/python3
+"""Connect an iPhone to Blue on this Linux desktop. Run as your regular user.
+
+Without options the wizard looks at the current state and does the least
+destructive thing that can help:
+
+  healthy            → nothing
+  bonded, not usable → reconnect; then clear the stale service cache and reconnect
+  bond missing/rejected by the phone → pair again (forget it on the phone first)
+"""
+import argparse
+import fcntl
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+
+import dbus
+import dbus.service
+from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib
+
+CONFIG = Path.home() / '.config/iphonebridge/local.env'
+SERVICE = 'iphonebridge.service'
+BLUEZ_STATE = Path('/var/lib/bluetooth')
+# Errors that mean the phone no longer holds a matching link key.
+KEY_LOST = ('key-missing', 'authentication failed', 'auth-failed', 'authenticationfailed',
+            'connection-key-missing', 'pin or key missing')
+
+
+def run(*args, check=True):
+    return subprocess.run(args, text=True, capture_output=True, check=check, timeout=30)
+
+
+def admin(*args):
+    # Keep password handling with the operating system.
+    prefix = ['sudo'] if sys.stdin.isatty() else ['pkexec']
+    subprocess.run(prefix + list(args), check=True)
+
+
+def props(bus, path, interface):
+    return dbus.Interface(bus.get_object('org.bluez', path),
+                          'org.freedesktop.DBus.Properties').GetAll(interface)
+
+
+def setprop(bus, path, interface, key, value):
+    dbus.Interface(bus.get_object('org.bluez', path),
+                   'org.freedesktop.DBus.Properties').Set(interface, key, value)
+
+
+def device_props(bus, device):
+    try:
+        return props(bus, device, 'org.bluez.Device1')
+    except dbus.DBusException:
+        return {}
+
+
+def wait_for(bus, device, key, timeout):
+    """Block until Device1.<key> is true or timeout passes. Returns the final value."""
+    deadline = time.monotonic() + timeout
+    loop = GLib.MainLoop()
+
+    def poll():
+        if device_props(bus, device).get(key) or time.monotonic() >= deadline:
+            loop.quit()
+            return False
+        return True
+    GLib.timeout_add_seconds(1, poll)
+    loop.run()
+    return bool(device_props(bus, device).get(key))
+
+
+class Rejected(dbus.DBusException):
+    _dbus_error_name = 'org.bluez.Error.Rejected'
+
+
+class Agent(dbus.service.Object):
+    object_path = '/blue_pair_iphone/agent'
+
+    def __init__(self, bus, target):
+        super().__init__(bus, self.object_path)
+        self.target = target
+
+    def validate(self, device):
+        if str(device) != self.target:
+            raise Rejected('This wizard only pairs the selected iPhone')
+
+    @dbus.service.method('org.bluez.Agent1', in_signature='ou', out_signature='')
+    def RequestConfirmation(self, device, passkey):
+        self.validate(device)
+        print(f'\nPairing code: {int(passkey):06d}', flush=True)
+        print('Check that the iPhone shows this code and tap Pair there.', flush=True)
+        # The explicitly selected phone still requires physical confirmation.
+
+    @dbus.service.method('org.bluez.Agent1', in_signature='o', out_signature='')
+    def RequestAuthorization(self, device):
+        self.validate(device)
+
+    @dbus.service.method('org.bluez.Agent1', in_signature='os', out_signature='')
+    def AuthorizeService(self, device, uuid):
+        self.validate(device)
+
+    @dbus.service.method('org.bluez.Agent1', in_signature='', out_signature='')
+    def Cancel(self):
+        print('Pairing cancelled. Tap the computer on the iPhone to retry.', flush=True)
+
+    @dbus.service.method('org.bluez.Agent1', in_signature='', out_signature='')
+    def Release(self):
+        pass
+
+
+def save_mac(mac):
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    old = CONFIG.read_text() if CONFIG.exists() else ''
+    lines = [line for line in old.splitlines()
+             if not re.match(r'^\s*(?:export\s+)?IPHONEBRIDGE_MAC=', line)]
+    lines.append('IPHONEBRIDGE_MAC=' + mac)
+    fd, name = tempfile.mkstemp(dir=CONFIG.parent, prefix='.pair-')
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            stream.write('\n'.join(lines) + '\n')
+        os.replace(name, CONFIG)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
+
+def obex_targets(address):
+    # Read only metadata, never message bodies or contact records.
+    targets = set()
+    try:
+        session = dbus.SessionBus()
+        objects = dbus.Interface(session.get_object('org.bluez.obex', '/'),
+                                 'org.freedesktop.DBus.ObjectManager').GetManagedObjects()
+        for interfaces in objects.values():
+            s = interfaces.get('org.bluez.obex.Session1', {})
+            if str(s.get('Destination', '')).upper() == address.upper():
+                if 'org.bluez.obex.MessageAccess1' in interfaces:
+                    targets.add('Messages')
+                if 'org.bluez.obex.PhonebookAccess1' in interfaces:
+                    targets.add('Contacts')
+    except dbus.DBusException:
+        pass
+    return targets
+
+
+def service_active():
+    return run('systemctl', '--user', 'is-active', SERVICE, check=False).returncode == 0
+
+
+def health(bus, device, mac, quiet=False):
+    p = device_props(bus, device)
+    active = service_active()
+    targets = obex_targets(mac)
+    if not quiet:
+        for key in ('Paired', 'Bonded', 'Trusted', 'Connected'):
+            print(f'{key}: {"yes" if p.get(key) else "no"}')
+        print('Blue service:', 'running' if active else 'not running')
+        for feature in ('Messages', 'Contacts'):
+            print(f'{feature}: {"connected" if feature in targets else "not connected yet"}')
+    return bool(active and all(p.get(k) for k in ('Paired', 'Trusted', 'Connected'))
+                and len(targets) == 2)
+
+
+def settle(bus, device, mac, seconds=20):
+    print(f'Waiting {seconds} seconds for Blue to connect…', flush=True)
+    time.sleep(seconds)
+    return health(bus, device, mac)
+
+
+class ServiceGuard:
+    """Stop Blue while we touch the device; always bring it back."""
+
+    def __init__(self):
+        self.was_active = service_active()
+        self.stopped = False
+
+    def stop(self):
+        if not self.stopped:
+            run('systemctl', '--user', 'stop', SERVICE)
+            self.stopped = True
+
+    def restart(self):
+        run('systemctl', '--user', 'restart', SERVICE)
+        self.stopped = False
+
+    def finish(self):
+        if self.stopped and self.was_active:
+            run('systemctl', '--user', 'start', SERVICE, check=False)
+
+
+def connect(bus, device, alias, timeout):
+    """Connect to a bonded phone. Returns 'ok', 'key-lost' or 'timeout'."""
+    dev = dbus.Interface(bus.get_object('org.bluez', device), 'org.bluez.Device1')
+    try:
+        dev.Disconnect()
+    except dbus.DBusException:
+        pass
+    time.sleep(2)
+    try:
+        dev.Connect(timeout=max(timeout, 30))
+    except dbus.DBusException as error:
+        text = f'{error.get_dbus_name()} {error.get_dbus_message()}'.lower()
+        if any(mark in text for mark in KEY_LOST):
+            return 'key-lost'
+        print(f'Computer-initiated connect did not succeed ({error.get_dbus_message()}).')
+        print(f'On iPhone: Settings → Bluetooth → tap {alias} under My Devices.', flush=True)
+    if wait_for(bus, device, 'Connected', timeout):
+        return 'ok'
+    return 'timeout'
+
+
+def clear_service_cache(bus, adapter, mac):
+    """Drop BlueZ's cached SDP record so MAP/PBAP are rediscovered on next connect."""
+    address = str(props(bus, adapter, 'org.bluez.Adapter1')['Address'])
+    cache = BLUEZ_STATE / address / 'cache' / mac
+    print('Clearing the stale Bluetooth service cache (password may be requested).', flush=True)
+    admin('/usr/bin/rm', '-f', str(cache))
+
+
+def reconnect(bus, adapter, device, mac, alias, guard, timeout):
+    """Reuse the existing bond. Returns True when healthy, 'key-lost' when
+    the phone rejects our keys, False otherwise."""
+    for attempt in (1, 2):
+        guard.stop()
+        if attempt == 2:
+            clear_service_cache(bus, adapter, mac)
+        print(f'\nReconnecting ({attempt}/2)…', flush=True)
+        state = connect(bus, device, alias, timeout)
+        if state == 'key-lost':
+            return 'key-lost'
+        if state == 'timeout':
+            print('The phone did not connect.')
+            continue
+        setprop(bus, device, 'org.bluez.Device1', 'Trusted', dbus.Boolean(True))
+        save_mac(mac)
+        guard.restart()
+        if settle(bus, device, mac):
+            return True
+        if not device_props(bus, device).get('Connected'):
+            print('The phone dropped the connection.')
+    return False
+
+
+def pair(bus, adapter, device, mac, ap, guard, timeout):
+    agent_manager = dbus.Interface(bus.get_object('org.bluez', '/org/bluez'), 'org.bluez.AgentManager1')
+    agent = Agent(bus, device)
+    guard.stop()
+    try:
+        if device_props(bus, device):
+            dbus.Interface(bus.get_object('org.bluez', adapter), 'org.bluez.Adapter1').RemoveDevice(device)
+        agent_manager.RegisterAgent(agent.object_path, 'DisplayYesNo')
+        agent_manager.RequestDefaultAgent(agent.object_path)
+        setprop(bus, adapter, 'org.bluez.Adapter1', 'Pairable', dbus.Boolean(True))
+        setprop(bus, adapter, 'org.bluez.Adapter1', 'DiscoverableTimeout', dbus.UInt32(timeout))
+        setprop(bus, adapter, 'org.bluez.Adapter1', 'Discoverable', dbus.Boolean(True))
+        print(f'\nOn iPhone: Settings → Bluetooth → tap {ap.get("Alias", "this computer")}.', flush=True)
+        print('If already listed under My Devices, forget it there first. Accept the pairing code.', flush=True)
+        if not wait_for(bus, device, 'Paired', timeout):
+            raise RuntimeError('Pairing timed out. Keep Bluetooth settings open on the phone and retry.')
+        setprop(bus, device, 'org.bluez.Device1', 'Trusted', dbus.Boolean(True))
+        save_mac(mac)
+        guard.restart()
+    finally:
+        try:
+            agent_manager.UnregisterAgent(agent.object_path)
+        except dbus.DBusException:
+            pass
+        for key in ('Discoverable', 'DiscoverableTimeout', 'Pairable'):
+            try:
+                setprop(bus, adapter, 'org.bluez.Adapter1', key, ap[key])
+            except dbus.DBusException:
+                pass
+    print('\nPaired and trusted. Blue restarted. On iPhone, tap ⓘ beside this computer and enable:')
+    print('  Show Message Notifications; Sync Contacts; Show System Notifications (if available).')
+    return settle(bus, device, mac)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, epilog=
+        'Exit codes: 0 = messages and contacts connected; 2 = more setup needed; 1 = error.',
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('mac', nargs='?', help='iPhone Bluetooth address (defaults to Blue config)')
+    parser.add_argument('--repair', action='store_true',
+                        help='force forgetting the phone and pairing again (also forget it on the phone)')
+    parser.add_argument('--check', action='store_true', help='only report connection status')
+    parser.add_argument('--timeout', type=int, default=180, help='pairing/connect timeout in seconds (default: 180)')
+    args = parser.parse_args()
+    if args.timeout < 1 or (args.check and args.repair):
+        parser.error('use a positive timeout; --check and --repair cannot be combined')
+    if os.geteuid() == 0:
+        parser.error('run as your normal desktop user, without sudo')
+    DBusGMainLoop(set_as_default=True)
+    bus = dbus.SystemBus()
+    manager = dbus.Interface(bus.get_object('org.bluez', '/'),
+                             'org.freedesktop.DBus.ObjectManager')
+    objects = manager.GetManagedObjects()
+    mac = args.mac
+    if not mac and CONFIG.exists():
+        match = re.search(r'^IPHONEBRIDGE_MAC=[\"\']?([0-9A-Fa-f:]{17})',
+                          CONFIG.read_text(), re.M)
+        mac = match.group(1) if match else None
+    if not mac:
+        phones = [str(i['org.bluez.Device1']['Address']) for i in objects.values()
+                  if 'iphone' in str(i.get('org.bluez.Device1', {}).get('Name', '')).lower()]
+        if len(phones) != 1:
+            parser.error('specify the iPhone MAC address; use bluetoothctl devices to list known devices')
+        mac = phones[0]
+    if not re.fullmatch(r'(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}', mac):
+        parser.error('invalid Bluetooth address')
+    mac = mac.upper()
+    adapters = [str(p) for p, i in objects.items() if 'org.bluez.Adapter1' in i]
+    if len(adapters) != 1:
+        raise RuntimeError('Expected one Bluetooth adapter; connect/enable one adapter and retry.')
+    adapter = adapters[0]
+    device = adapter + '/dev_' + mac.replace(':', '_')
+    print('Selected iPhone:', mac, flush=True)
+    if args.check:
+        return 0 if health(bus, device, mac) else 2
+    lock_path = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / 'blue-pair-iphone.lock'
+    lock = lock_path.open('w')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise RuntimeError('Another pairing wizard is already running.') from None
+    if not shutil.which('blue'):
+        raise RuntimeError('Blue is not installed or is missing from PATH.')
+    if run('systemctl', '--user', 'cat', SERVICE, check=False).returncode:
+        raise RuntimeError('Install Blue’s iphonebridge user service before running this script.')
+    setprop(bus, adapter, 'org.bluez.Adapter1', 'Powered', dbus.Boolean(True))
+    ap = props(bus, adapter, 'org.bluez.Adapter1')
+    alias = str(ap.get('Alias', 'this computer'))
+    if int(ap.get('Class', 0)) & 0x1ffc != 0x0408:
+        print('Setting the Bluetooth device type required by Blue (password may be requested).', flush=True)
+        admin('/usr/bin/btmgmt', 'class', '4', '8')
+
+    # Decide what is actually needed.
+    if not args.repair and health(bus, device, mac):
+        print('\nEverything is connected. Nothing to do.')
+        return 0
+    bonded = bool(device_props(bus, device).get('Paired'))
+    guard = ServiceGuard()
+    ready = False
+    try:
+        if args.repair:
+            print('\nForced re-pair requested.')
+        elif bonded:
+            print('\nThe phone is still paired with this computer; trying to reconnect without re-pairing.')
+            result = reconnect(bus, adapter, device, mac, alias, guard, args.timeout)
+            if result is True:
+                ready = True
+            elif result == 'key-lost':
+                print('\nThe iPhone no longer accepts this computer’s keys; pairing again is required.')
+                bonded = False
+            else:
+                guard.finish()
+                print('\nStill not fully connected, but the pairing is intact. Before re-pairing, try:')
+                print('  1. On iPhone: Settings → Bluetooth → ⓘ beside this computer →')
+                print('     make sure Show Message Notifications and Sync Contacts are on.')
+                print('  2. Toggle Bluetooth off and on on the iPhone, then run this wizard again.')
+                print('  3. If it keeps failing: blue-pair-iphone --repair (then forget it on the phone too).')
+                return 2
+        else:
+            print('\nThis computer has no pairing with the phone; pairing is required.')
+        if not ready:
+            ready = pair(bus, adapter, device, mac, ap, guard, args.timeout)
+    finally:
+        guard.finish()
+    if not ready:
+        print('\nEnable the phone permissions above. Blue retries every minute.')
+        print('Then run: blue-pair-iphone --check')
+    return 0 if ready else 2
+
+
+if __name__ == '__main__':
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(130))
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print('\nCancelled.', file=sys.stderr)
+        sys.exit(130)
+    except (RuntimeError, OSError, dbus.DBusException, subprocess.SubprocessError) as error:
+        print(f'Error: {error}', file=sys.stderr)
+        sys.exit(1)

@@ -69,6 +69,5 @@ fi
 # Workspace 9: WhatsApp webapp, Signal, Blue
 has_class web.whatsapp || launch_move 9 web.whatsapp omarchy-launch-webapp 'https://web.whatsapp.com/' &
 has_class signal || exec_ws 9 signal-desktop
-has_class iphonebridge || exec_ws 9 "$HOME/.local/bin/blue-qt"
 
 wait

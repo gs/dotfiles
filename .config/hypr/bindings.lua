@@ -142,8 +142,9 @@ o.bind("SUPER + XF86KbdBrightnessUp", "Display brightness up", "omarchy-brightne
 
 -- Lock and suspend. Quattro renamed the lock helper to omarchy-system-lock.
 unbind_all({ "SUPER + SHIFT + Q", "SUPER + CTRL + Q" })
-o.bind("SUPER + SHIFT + Q", "Lock and sleep", "omarchy-system-lock; sleep 0.5; systemctl suspend")
-o.bind("SUPER + CTRL + Q", "Lock screen", "omarchy-system-lock")
+o.bind("SUPER + SHIFT + Q", "Lock and sleep", "omarchy-lock-sleep-safe")
+-- Stuck-lock workaround (omarchy 4.0.3rc4 still has the bug): see ~/.local/bin/omarchy-lock-safe
+o.bind("SUPER + CTRL + Q", "Lock screen", "omarchy-lock-safe")
 
 -- Keybindings cheatsheet. Omarchy's default lives on SUPER+K, which this file
 -- reassigns to Vim-style focus-up, so put the help on SUPER+I instead.
@@ -184,3 +185,8 @@ o.bind("SUPER + SHIFT + M", "Move workspace to other monitor",
 -- 8: Nextcloud, 9: messengers, 10: browser). Idempotent, so pressing it
 -- mid-session just relaunches whatever is missing.
 o.bind("SUPER + SHIFT + GRAVE", "Launch workspace apps", "workspace-setup")
+
+-- SUPER+SHIFT+G was Omarchy's "Signal" launcher. Reuse it for the Gmail web app
+-- (Signal stays reachable from the app launcher). focus=true raises it if open.
+unbind_all({ "SUPER + SHIFT + G" })
+o.bind("SUPER + SHIFT + G", "Gmail", { webapp = "https://mail.google.com/mail/", focus = true })
