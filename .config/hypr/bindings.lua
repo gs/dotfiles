@@ -99,19 +99,9 @@ o.bind("SUPER + SHIFT + ALT + J", "Move workspace to down monitor", hl.dsp.works
 o.bind("SUPER + SHIFT + ALT + K", "Move workspace to up monitor", hl.dsp.workspace.move({ monitor = "u" }))
 o.bind("SUPER + SHIFT + ALT + L", "Move workspace to right monitor", hl.dsp.workspace.move({ monitor = "r" }))
 
--- Focus numbered workspaces without moving them between monitors. Jumping to
--- a workspace that already lives on the other screen moves the FOCUS there;
--- it does not drag the workspace over and swap what was showing. Workspaces
--- change monitor only via an explicit move (SUPER+SHIFT+ALT+arrows).
-for workspace = 1, 10 do
-  local key = "code:" .. (workspace + 9)
-  hl.unbind("SUPER + " .. key)
-  o.bind(
-    "SUPER + " .. key,
-    "Focus workspace " .. workspace,
-    hl.dsp.focus({ workspace = workspace })
-  )
-end
+-- SUPER+1..0 is left to Omarchy: every monitor has its own workspaces 1-10
+-- (default/hypr/monitor-workspaces.lua), so the number acts on the focused
+-- monitor. Rebinding it to global ids 1-10 pinned it to the laptop panel.
 
 -- Mac-friendly capture shortcuts (Apple keyboards have no Print key).
 -- SUPER+SHIFT+S replaces the preinstalled Google Maps binding, and
