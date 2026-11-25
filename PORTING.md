@@ -10,7 +10,7 @@ setups — reinstall the framework fresh and re-apply only your overrides.**
 | Tier | Examples | On a new machine |
 |------|----------|------------------|
 | Framework defaults | `/usr/share/omarchy/` | Installed by Omarchy, never tracked |
-| Your overrides (portable) | `.config/hypr/*.lua`, `bin/`, `usr-local-bin/` | `./install.sh` symlinks/installs them |
+| Your overrides (portable) | `.config/hypr/*.lua`, `bin/`, `usr-local-bin/`, `etc/` | `./install.sh` symlinks/installs them (`etc/` and `usr-local-bin/` as root copies, via sudo) |
 | Machine-specific | `~/.config/hypr/monitors.lua`, backlight state | Regenerate per host, gitignored |
 
 ## Notes
