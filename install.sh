@@ -123,6 +123,19 @@ if [ -d "$DOTFILES_DIR/usr-local-bin" ] && [ -t 0 ] && command -v sudo >/dev/nul
     done
 fi
 
+# System config under /etc (kernel module blacklists and the like), installed
+# as root-owned copies for the same reason as usr-local-bin above. Takes effect
+# on the next boot.
+if [ -d "$DOTFILES_DIR/etc" ] && [ -t 0 ] && command -v sudo >/dev/null 2>&1; then
+    while IFS= read -r -d '' src; do
+        dst="/${src#"$DOTFILES_DIR/"}"
+        if ! cmp -s "$src" "$dst"; then
+            echo "Installing $dst (needs sudo)..."
+            sudo install -D -m 0644 "$src" "$dst" || echo "Skipped $dst (sudo failed)."
+        fi
+    done < <(find "$DOTFILES_DIR/etc" -type f -print0)
+fi
+
 # --- Private dotfiles: SSH config + private keys ---
 # Private material is NOT in this (public) repo. It lives in the private repo:
 #   .ssh/config              -> symlinked into ~/.ssh/config
