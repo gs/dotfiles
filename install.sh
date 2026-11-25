@@ -13,6 +13,19 @@ PRIVATE_DIR="${PRIVATE_DIR:-$(cd "$DOTFILES_DIR/.." && pwd)/dotfiles-private}"
 
 echo "Installing dotfiles from $DOTFILES_DIR..."
 
+# Symlink $1 to $2, moving a real file/dir at $2 aside first instead of
+# clobbering it. Re-running is a no-op once the link points at $1.
+link() {
+    local src="$1" dst="$2"
+    [ "$(readlink "$dst" 2>/dev/null)" = "$src" ] && return 0
+    if [ -e "$dst" ] && [ ! -L "$dst" ]; then
+        local bak="$dst.bak.$(date +%s)"
+        echo "Backing up $dst -> $bak"
+        mv "$dst" "$bak"
+    fi
+    ln -sfn "$src" "$dst"
+}
+
 # Symlink .gitconfig if it exists and isn't already mounted
 if [ -f "$DOTFILES_DIR/.gitconfig" ] && [ ! -f "$HOME/.gitconfig" ]; then
     echo "Symlinking .gitconfig..."
@@ -62,7 +75,7 @@ fi
 # Symlink starship config if it exists
 if [ -f "$DOTFILES_DIR/.config/starship.toml" ]; then
     echo "Symlinking starship.toml..."
-    ln -sf "$DOTFILES_DIR/.config/starship.toml" "$CONFIG_DIR/starship.toml"
+    link "$DOTFILES_DIR/.config/starship.toml" "$CONFIG_DIR/starship.toml"
 fi
 
 # Symlink bin directory into ~/.local/bin, which is already on PATH on this
@@ -76,7 +89,7 @@ if [ -d "$DOTFILES_DIR/bin" ]; then
     for script in "$DOTFILES_DIR/bin"/*; do
         if [ -f "$script" ]; then
             script_name=$(basename "$script")
-            ln -sf "$script" "$BIN_DIR/$script_name"
+            link "$script" "$BIN_DIR/$script_name"
         fi
     done
 fi
@@ -85,11 +98,12 @@ fi
 # ~/.config/hypr already exists (monitors.lua and friends are machine-specific
 # and stay local), so the whole-directory symlink loop above skips it.
 if [ -d "$CONFIG_DIR/hypr" ] && [ ! -L "$CONFIG_DIR/hypr" ]; then
-    for f in hyprland.lua bindings.lua input.lua looknfeel.lua autostart.lua; do
-        if [ -f "$DOTFILES_DIR/.config/hypr/$f" ]; then
-            echo "Symlinking hypr/$f..."
-            ln -sf "$DOTFILES_DIR/.config/hypr/$f" "$CONFIG_DIR/hypr/$f"
-        fi
+    for src in "$DOTFILES_DIR/.config/hypr"/*.lua; do
+        [ -f "$src" ] || continue
+        # monitors.lua is per-host (gitignored); never link a stray copy.
+        [ "$(basename "$src")" = monitors.lua ] && continue
+        echo "Symlinking hypr/$(basename "$src")..."
+        link "$src" "$CONFIG_DIR/hypr/$(basename "$src")"
     done
 fi
 

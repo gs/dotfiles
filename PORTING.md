@@ -15,8 +15,13 @@ setups — reinstall the framework fresh and re-apply only your overrides.**
 
 ## Notes
 
-- `install.sh` symlinks `.config/*` dirs wholesale, then the Omarchy hypr
-  `.lua` files per-file (because `~/.config/hypr` already exists on Omarchy).
+- `install.sh` symlinks `.config/*` dirs wholesale (skipping any that already
+  exist), then the Omarchy hypr `.lua` files per-file (because `~/.config/hypr`
+  already exists on Omarchy). A real file it replaces is moved aside to
+  `<name>.bak.<timestamp>` first.
+- Only track a hypr file that actually differs from Omarchy's default in
+  `/usr/share/omarchy/config/hypr/`. Omarchy 4 handles the Apple Silicon lid,
+  backlight and lock-before-suspend itself, so those workarounds are gone.
 - `tiny_nvim` is the nvim config; it is symlinked to `~/.config/nvim`.
 - Shell is the Omarchy default (bash) — no fish/zsh config is tracked.
 - Web app launchers (Nextcloud etc.) keep their URLs in machine-local

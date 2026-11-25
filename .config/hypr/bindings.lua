@@ -1,8 +1,6 @@
--- Personal keybindings for Omarchy 4 / Quattro.
---
--- This file is dormant on the current legacy .conf setup. Quattro's
--- hyprland.lua loads it after Omarchy defaults, so these overrides survive
--- package updates. Keep bindings.conf until the Quattro migration is complete.
+-- Personal keybindings for Omarchy 4. hyprland.lua loads this after Omarchy's
+-- defaults, so these overrides survive package updates.
+-- List the effective bindings with: omarchy-menu-keybindings --print
 
 -- Keep directional window operations inside the focused monitor. With the
 -- default (true), SUPER+H/L and SUPER+SHIFT+H/L fall through to the monitor in
