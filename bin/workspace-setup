@@ -1,9 +1,15 @@
 #!/bin/bash
-# workspace-setup — launch my standard apps onto their workspaces:
+# workspace-setup — launch my standard apps onto the FOCUSED monitor's
+# workspaces:
 #   1: terminal + tmux    2: terminal    8: Nextcloud
-#   9: WhatsApp, Signal, Blue    10 (Super+0): browser
+#   9: WhatsApp, Signal   10 (Super+0): browser
 #
-# Idempotent: anything already running is left alone, so it's safe to re-run.
+# The numbers are per monitor, as SUPER+N sees them: Omarchy gives every monitor
+# its own block of ten workspace ids (laptop 1-10, next monitor 11-20, ...; see
+# default/hypr/monitor-workspaces.lua), so on the monitor in block 1 "8" is 18.
+#
+# Idempotent: an app already running anywhere is left where it is, so it's safe
+# to re-run.
 # Bound to SUPER+SHIFT+GRAVE in hypr/bindings.lua.
 #
 # Native apps use Hyprland's `[workspace N silent]` exec rule. Chromium webapps
@@ -19,15 +25,26 @@ has_class() { clients | jq -e --arg s "$1" 'any(.[]; .class | contains($s))' >/d
 
 has_foot_on() { clients | jq -e --argjson w "$1" 'any(.[]; .class == "foot" and .workspace.id == $w)' >/dev/null; }
 
+# The focused monitor and its block of workspace ids, read from Omarchy's state
+# file (block <TAB> connector <TAB> identity). Without it, fall back to 1-10.
+TARGET=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')
+OMARCHY_BLOCKS="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/monitor-workspaces"
+block=0
+if [[ -r $OMARCHY_BLOCKS ]]; then
+  block=$(awk -F'\t' -v m="$TARGET" '$2 == m { print $1; exit }' "$OMARCHY_BLOCKS")
+  block=${block:-0}
+fi
+ws() { echo $(( block * 10 + $1 )); } # <slot 1-10> -> workspace id
+
 # Launch onto a workspace via exec rule (apps whose process owns the window)
-exec_ws() { # <workspace> <command...>
-  local ws=$1; shift
-  hyprctl dispatch "hl.dsp.exec_cmd('[workspace $ws silent] uwsm-app -- $*')" >/dev/null
+exec_ws() { # <workspace id> <command...>
+  local id=$1; shift
+  hyprctl dispatch "hl.dsp.exec_cmd('[workspace $id silent] uwsm-app -- $*')" >/dev/null
 }
 
 # Launch, then move the first new window whose class contains <substring>
-launch_move() { # <workspace> <class-substring> <command...>
-  local ws=$1 sub=$2 before new
+launch_move() { # <workspace id> <class-substring> <command...>
+  local id=$1 sub=$2 before new
   shift 2
   before=$(clients | jq -c --arg s "$sub" '[.[] | select(.class | contains($s)) | .address]')
   setsid -f "$@" >/dev/null 2>&1
@@ -36,7 +53,7 @@ launch_move() { # <workspace> <class-substring> <command...>
     new=$(clients | jq -r --arg s "$sub" --argjson b "$before" \
       '[.[] | select(.class | contains($s)) | .address] - $b | .[0] // empty')
     if [[ -n $new ]]; then
-      hyprctl dispatch "hl.dsp.window.move({ workspace = '$ws', follow = false, window = 'address:$new' })" >/dev/null
+      hyprctl dispatch "hl.dsp.window.move({ workspace = '$id', follow = false, window = 'address:$new' })" >/dev/null
       return 0
     fi
   done
@@ -44,41 +61,33 @@ launch_move() { # <workspace> <class-substring> <command...>
   return 1
 }
 
-# Omarchy gives every monitor its own block of ten workspace ids (laptop 1-10,
-# next monitor 11-20, ...; see default/hypr/monitor-workspaces.lua). Hyprland
-# creates a missing workspace on whichever monitor is focused, so a window sent
-# to id 8 while the external monitor has focus drags the laptop's 8 onto it.
-# After launching, put each workspace back on the monitor that owns its block,
-# when that monitor is connected.
-OMARCHY_BLOCKS="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/monitor-workspaces"
-home_ws() { # <workspace id>
-  local id=$1 owner on
-  [[ -r $OMARCHY_BLOCKS ]] || return 0
-  owner=$(awk -F'\t' -v b=$(( (id - 1) / 10 )) '$1 == b { print $2 }' "$OMARCHY_BLOCKS")
-  [[ -n $owner ]] || return 0
-  hyprctl monitors -j | jq -e --arg m "$owner" 'any(.[]; .name == $m)' >/dev/null || return 0
+# Hyprland creates a missing workspace on whichever monitor has focus, and
+# launching can move focus. Make sure each workspace we filled is on TARGET.
+on_target() { # <workspace id>
+  local id=$1 on
   for _ in $(seq 1 15); do
     on=$(hyprctl workspaces -j | jq -r --argjson i "$id" '.[] | select(.id == $i) | .monitor')
     [[ -n $on ]] && break
     sleep 0.2
   done
-  if [[ -n $on && $on != "$owner" ]]; then
-    hyprctl dispatch "hl.dsp.workspace.move({ workspace = '$id', monitor = '$owner' })" >/dev/null
+  if [[ -n $on && $on != "$TARGET" ]]; then
+    hyprctl dispatch "hl.dsp.workspace.move({ workspace = '$id', monitor = '$TARGET' })" >/dev/null
   fi
 }
 
-# Workspace 1: terminal with tmux (attach to "main" or create it)
-has_foot_on 1 || exec_ws 1 "foot -e tmux new-session -A -s main"
+# Native apps first; they don't touch chromium.
+has_foot_on "$(ws 1)" || exec_ws "$(ws 1)" "foot -e tmux new-session -A -s main"
+has_foot_on "$(ws 2)" || exec_ws "$(ws 2)" foot
+has_class signal || exec_ws "$(ws 9)" signal-desktop
 
-# Workspace 2: plain terminal
-has_foot_on 2 || exec_ws 2 foot
+# Chromium windows one at a time, browser first. With no chromium running yet,
+# parallel launches race for the profile lock and can end up as two browser
+# processes on one profile ("Profile error occurred" windows).
+has_class chromium || launch_move "$(ws 10)" chromium uwsm-app -- chromium
 
-# Workspace 10 (Super+0): browser
-has_class chromium || launch_move 10 chromium uwsm-app -- chromium &
-
-# Workspace 8: Nextcloud webapp. The URL (a private tailnet hostname) stays out
-# of this public repo: read it from the machine-local desktop entry instead.
-# The chromium webapp's window class contains the URL's hostname.
+# Nextcloud webapp. The URL (a private tailnet hostname) stays out of this
+# public repo: read it from the machine-local desktop entry instead. The
+# chromium webapp's window class contains the URL's hostname.
 nc_desktop="$HOME/.local/share/applications/Nextcloud.desktop"
 if [[ -f $nc_desktop ]]; then
   nc_url=$(sed -n 's/^Exec=omarchy-launch-webapp //p' "$nc_desktop")
@@ -88,15 +97,11 @@ if [[ -f $nc_desktop ]]; then
   nc_host=${nc_url#*://}
   nc_host=${nc_host%%/*}
   if [[ -n $nc_host ]]; then
-    has_class "$nc_host" || launch_move 8 "$nc_host" omarchy-launch-webapp "$nc_url" &
+    has_class "$nc_host" || launch_move "$(ws 8)" "$nc_host" omarchy-launch-webapp "$nc_url"
   fi
 fi
 
-# Workspace 9: WhatsApp webapp, Signal, Blue
-has_class web.whatsapp || launch_move 9 web.whatsapp omarchy-launch-webapp 'https://web.whatsapp.com/' &
-has_class signal || exec_ws 9 signal-desktop
+has_class web.whatsapp || launch_move "$(ws 9)" web.whatsapp omarchy-launch-webapp 'https://web.whatsapp.com/'
 
-wait
-
-for ws in 1 2 8 9 10; do home_ws "$ws" & done
+for slot in 1 2 8 9 10; do on_target "$(ws "$slot")" & done
 wait
