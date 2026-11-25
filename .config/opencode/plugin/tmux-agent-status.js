@@ -1,1 +1,0 @@
-/home/gs/code/tmux-agent-status/adapters/opencode/tmux-agent-status.js

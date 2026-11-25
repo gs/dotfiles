@@ -4,10 +4,6 @@
 .config/tmux/plugins/
 
 # Generated / build artifacts
-.config/opencode/bun.lock
-.config/opencode/node_modules/
-.config/opencode/package.json
-.config/opencode/*.zip
 .config/tiny_nvim/lazy-lock.json
 .config/tmux/tmux.conf.bak.*
 
@@ -32,5 +28,3 @@
 .config/Nextcloud/
 .config/herdr/
 .netrc
-.config/opencode/*.bak
-.config/opencode/*.tui-migration.bak
