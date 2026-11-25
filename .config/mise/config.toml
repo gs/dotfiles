@@ -1,6 +1,0 @@
-[tools]
-# Only tools Omarchy does not already provide. claude, codex, gh, node,
-# opencode, pi and uv come from /etc/mise/conf.d/omarchy-tools.toml.
-"llama.cpp" = { version = "latest", version_prefix = "b" }
-ruby = "latest"
-stripe-cli = "1.55.14"
