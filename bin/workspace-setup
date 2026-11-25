@@ -1,8 +1,8 @@
 #!/bin/bash
 # workspace-setup — launch my standard apps onto the FOCUSED monitor's
 # workspaces:
-#   1: terminal + tmux    2: terminal    3: Agenty    8: Nextcloud
-#   9: WhatsApp, Signal   10 (Super+0): browser
+#   1: terminal + tmux    2: terminal    3: Agenty    4: Chat
+#   8: Nextcloud    9: WhatsApp, Signal    10 (Super+0): browser
 #
 # The numbers are per monitor, as SUPER+N sees them: Omarchy gives every monitor
 # its own block of ten workspace ids (laptop 1-10, next monitor 11-20, ...; see
@@ -107,9 +107,10 @@ webapp() { # <slot> <desktop entry name>
 }
 
 webapp 3 Agenty
+webapp 4 Chat
 webapp 8 Nextcloud
 
 has_class web.whatsapp || launch_move "$(ws 9)" web.whatsapp omarchy-launch-webapp 'https://web.whatsapp.com/'
 
-for slot in 1 2 3 8 9 10; do on_target "$(ws "$slot")" & done
+for slot in 1 2 3 4 8 9 10; do on_target "$(ws "$slot")" & done
 wait
