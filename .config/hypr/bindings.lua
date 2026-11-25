@@ -140,37 +140,18 @@ o.bind("SUPER + F2", "Display brightness up", "omarchy-brightness-display +5%", 
 o.bind("SUPER + XF86KbdBrightnessDown", "Display brightness down", "omarchy-brightness-display 5%-", { locked = true, repeating = true })
 o.bind("SUPER + XF86KbdBrightnessUp", "Display brightness up", "omarchy-brightness-display +5%", { locked = true, repeating = true })
 
--- Lock and suspend. Quattro renamed the lock helper to omarchy-system-lock.
+-- Lock and suspend. Omarchy's own lock (SUPER+CTRL+L) is reassigned above to
+-- workspace switching, so locking lives on Q. Suspend needs no explicit lock:
+-- omarchy-sleep-lock.service holds a sleep inhibitor and locks first.
+-- SUPER+SHIFT+Q replaces Omarchy's calculator binding.
 unbind_all({ "SUPER + SHIFT + Q", "SUPER + CTRL + Q" })
-o.bind("SUPER + SHIFT + Q", "Lock and sleep", "omarchy-lock-sleep-safe")
--- Stuck-lock workaround (omarchy 4.0.3rc4 still has the bug): see ~/.local/bin/omarchy-lock-safe
-o.bind("SUPER + CTRL + Q", "Lock screen", "omarchy-lock-safe")
+o.bind("SUPER + SHIFT + Q", "Lock and sleep", "systemctl suspend")
+o.bind("SUPER + CTRL + Q", "Lock screen", "omarchy-system-lock")
 
 -- Keybindings cheatsheet. Omarchy's default lives on SUPER+K, which this file
 -- reassigns to Vim-style focus-up, so put the help on SUPER+I instead.
 unbind_all({ "SUPER + I" })
 o.bind("SUPER + I", "Show keybindings", "omarchy-menu-keybindings")
-
--- Clamshell mode. Omarchy's own lid handling is a no-op on Apple Silicon:
--- omarchy-hw-laptop-closed reads /proc/acpi/button/lid/, which does not exist
--- on a device-tree platform, and the macsmc-input driver does not maintain the
--- evdev SW_LID state bitmap either, so the lid always reads as open.
---
--- The switch *events* are reliable, so latch the state here into a flag that
--- the /usr/local/bin/omarchy-hw-laptop-closed override reads. That lets the
--- rest of Omarchy's clamshell machinery work unmodified.
-unbind_all({
-  "switch:on:Apple SMC power/lid events",
-  "switch:off:Apple SMC power/lid events",
-})
-
-o.bind("switch:on:Apple SMC power/lid events", nil,
-  "omarchy-lid-clamshell closed",
-  { locked = true })
-
-o.bind("switch:off:Apple SMC power/lid events", nil,
-  "omarchy-lid-clamshell open",
-  { locked = true })
 
 -- Spotify is hidden from the Install > Service menu, so its launcher goes too:
 -- SUPER + SHIFT + M was Omarchy's "Music" binding and would otherwise try to

@@ -31,17 +31,3 @@ require("default.hypr.toggles")
 -- Pin web apps to fixed workspaces (exact class match so sibling windows on the
 -- same domain -- Nextcloud __nc_, agenty-desk __DEL_ -- are not caught).
 o.window({ class = "^chrome-box.tail67a3be.ts.net__-Default$" }, { workspace = "3" }) -- Agenty
-
--- Brightness keys drive the laptop panel, not the Touch Bar.
---
--- /sys/class/backlight holds 228600000.dsi.0 (Touch Bar) and apple-panel-bl
--- (the real panel). omarchy-hw-display takes the alphabetically first entry,
--- excluding only the T2-era name "appletb_backlight", so digits win and the
--- keys adjust a backlight nobody can see. OMARCHY_BACKLIGHT_PATH is that
--- script's own knob; pointing it at a directory holding just the panel makes
--- the unmodified upstream script pick correctly.
---
--- This has to be an env var rather than a shim in /usr/local/bin: envs.lua
--- forces $OMARCHY_PATH/bin to the front of PATH, so nothing there is
--- overridable by path order.
-hl.env("OMARCHY_BACKLIGHT_PATH", os.getenv("HOME") .. "/.local/state/omarchy/backlight")
