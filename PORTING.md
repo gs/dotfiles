@@ -23,6 +23,11 @@ setups — reinstall the framework fresh and re-apply only your overrides.**
   `/usr/share/omarchy/config/hypr/`. Omarchy 4 handles the Apple Silicon lid,
   backlight and lock-before-suspend itself, so those workarounds are gone.
 - `tiny_nvim` is the nvim config; it is symlinked to `~/.config/nvim`.
+- Apple Silicon MacBook Pro with a Touch Bar: install `tiny-dfr`
+  (`sudo pacman -S tiny-dfr`, reboot). Besides drawing the F-keys, its udev
+  rule moves the Touch Bar's DRM card to its own seat. Without it Hyprland sees
+  the Touch Bar as DSI-1, Omarchy mistakes it for the laptop panel, and closing
+  the lid with a monitor attached leaves the windows on the closed laptop.
 - Shell is the Omarchy default (bash) — no fish/zsh config is tracked.
 - Web app launchers (Nextcloud etc.) keep their URLs in machine-local
   `~/.local/share/applications/*.desktop` entries, not in this public repo —

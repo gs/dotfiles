@@ -59,6 +59,9 @@ has_class chromium || launch_move 10 chromium uwsm-app -- chromium &
 nc_desktop="$HOME/.local/share/applications/Nextcloud.desktop"
 if [[ -f $nc_desktop ]]; then
   nc_url=$(sed -n 's/^Exec=omarchy-launch-webapp //p' "$nc_desktop")
+  # Omarchy's webapp installer quotes the URL in Exec=; strip the quotes or
+  # the launcher gets a literal "https://..." and opens nothing.
+  nc_url=${nc_url#\"}; nc_url=${nc_url%\"}
   nc_host=${nc_url#*://}
   nc_host=${nc_host%%/*}
   if [[ -n $nc_host ]]; then
