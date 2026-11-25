@@ -1,7 +1,7 @@
 #!/bin/bash
 # workspace-setup — launch my standard apps onto the FOCUSED monitor's
 # workspaces:
-#   1: terminal + tmux    2: terminal    8: Nextcloud
+#   1: terminal + tmux    2: terminal    3: Agenty    8: Nextcloud
 #   9: WhatsApp, Signal   10 (Super+0): browser
 #
 # The numbers are per monitor, as SUPER+N sees them: Omarchy gives every monitor
@@ -85,23 +85,31 @@ has_class signal || exec_ws "$(ws 9)" signal-desktop
 # processes on one profile ("Profile error occurred" windows).
 has_class chromium || launch_move "$(ws 10)" chromium uwsm-app -- chromium
 
-# Nextcloud webapp. The URL (a private tailnet hostname) stays out of this
-# public repo: read it from the machine-local desktop entry instead. The
-# chromium webapp's window class contains the URL's hostname.
-nc_desktop="$HOME/.local/share/applications/Nextcloud.desktop"
-if [[ -f $nc_desktop ]]; then
-  nc_url=$(sed -n 's/^Exec=omarchy-launch-webapp //p' "$nc_desktop")
-  # Omarchy's webapp installer quotes the URL in Exec=; strip the quotes or
-  # the launcher gets a literal "https://..." and opens nothing.
-  nc_url=${nc_url#\"}; nc_url=${nc_url%\"}
-  nc_host=${nc_url#*://}
-  nc_host=${nc_host%%/*}
-  if [[ -n $nc_host ]]; then
-    has_class "$nc_host" || launch_move "$(ws 8)" "$nc_host" omarchy-launch-webapp "$nc_url"
-  fi
-fi
+# Webapps whose URLs (private tailnet hosts) stay out of this public repo: read
+# them from the machine-local desktop entries Omarchy's webapp installer wrote.
+# The window class is what Chromium derives from the URL: "chrome-" + host
+# (port dropped) + "_" + path with every "/" as "_" + "-Default", e.g.
+#   https://box:8448/DEL/dashboard -> chrome-box__DEL_dashboard-Default
+# Match the whole class: the host alone is shared (Chat on box:8453/ is
+# chrome-box__-Default) and would count as already running.
+webapp() { # <slot> <desktop entry name>
+  local entry="$HOME/.local/share/applications/$2.desktop" url host path class
+  [[ -f $entry ]] || return 0
+  url=$(sed -n 's/^Exec=omarchy-launch-webapp //p' "$entry")
+  # The installer quotes the URL in Exec=; strip the quotes or the launcher
+  # gets a literal "https://..." and opens nothing.
+  url=${url#\"}; url=${url%\"}
+  [[ -n $url ]] || return 0
+  host=${url#*://}; path=/${host#*/}; host=${host%%/*}; host=${host%%:*}
+  [[ $url == *://*/* ]] || path=/
+  class="chrome-${host}_${path//\//_}-Default"
+  has_class "$class" || launch_move "$(ws "$1")" "$class" omarchy-launch-webapp "$url"
+}
+
+webapp 3 Agenty
+webapp 8 Nextcloud
 
 has_class web.whatsapp || launch_move "$(ws 9)" web.whatsapp omarchy-launch-webapp 'https://web.whatsapp.com/'
 
-for slot in 1 2 8 9 10; do on_target "$(ws "$slot")" & done
+for slot in 1 2 3 8 9 10; do on_target "$(ws "$slot")" & done
 wait

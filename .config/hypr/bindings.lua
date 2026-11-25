@@ -153,9 +153,9 @@ unbind_all({ "SUPER + SHIFT + M" })
 o.bind("SUPER + SHIFT + M", "Move workspace to other monitor",
   o.workspaces.move_to_monitor("+1"))
 
--- Restore the standard workspace layout (1: tmux terminal, 2: terminal,
--- 8: Nextcloud, 9: messengers, 10: browser). Idempotent, so pressing it
--- mid-session just relaunches whatever is missing.
+-- Restore the standard workspace layout on the focused monitor (1: tmux
+-- terminal, 2: terminal, 8: Nextcloud, 9: messengers, 10: browser).
+-- Idempotent, so pressing it mid-session just relaunches whatever is missing.
 o.bind("SUPER + SHIFT + GRAVE", "Launch workspace apps", "workspace-setup")
 
 -- SUPER+SHIFT+G was Omarchy's "Signal" launcher. Reuse it for the Gmail web app

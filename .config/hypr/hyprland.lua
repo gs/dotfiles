@@ -28,10 +28,5 @@ require("default.hypr.toggles")
 -- Add any other personal Hyprland configuration below.
 -- o.window("qemu", { workspace = "5" })
 
--- Pin web apps to fixed workspaces. Match the exact class: a Chromium webapp's
--- class is host + path, without the port, so other apps on the same host (Chat
--- on :8453/ is chrome-box.tail67a3be.ts.net__-Default) must not be caught.
-o.window({ class = "^chrome-box.tail67a3be.ts.net__DEL_dashboard-Default$" }, { workspace = "3" }) -- Agenty
--- Workspace 3 is the laptop's (Omarchy blocks: eDP-1 owns 1-10). Without this
--- Hyprland creates it on whichever monitor has focus.
-hl.workspace_rule({ workspace = "3", monitor = "eDP-1" })
+-- Webapp placement (Agenty, Nextcloud, ...) lives in bin/workspace-setup, which
+-- targets the focused monitor; no fixed workspace pins here.
