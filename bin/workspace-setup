@@ -1,29 +1,24 @@
 #!/bin/bash
-# workspace-setup — launch my standard apps onto the FOCUSED monitor's
-# workspaces:
+# workspace-setup — gather my standard apps onto the FOCUSED monitor:
 #   1: terminal + tmux    2: terminal    3: Agenty    4: Chat
 #   8: Nextcloud    9: WhatsApp, Signal    10 (Super+0): browser
+#
+# One working screen: run it on the monitor you work on (the external one when
+# docked), and the other screen stays free for ad-hoc windows. Closing the lid
+# then moves nothing, since the laptop holds nothing fixed.
 #
 # The numbers are per monitor, as SUPER+N sees them: Omarchy gives every monitor
 # its own block of ten workspace ids (laptop 1-10, next monitor 11-20, ...; see
 # default/hypr/monitor-workspaces.lua), so on the monitor in block 1 "8" is 18.
 #
-# Idempotent: an app already running anywhere is left where it is, so it's safe
-# to re-run.
+# Per app: already on its slot here -> left alone; running elsewhere -> moved
+# here; not running -> launched here. Terminals are the exception: one running
+# elsewhere may be in use, so a missing one is launched rather than taken.
 # Bound to SUPER+SHIFT+GRAVE in hypr/bindings.lua.
-#
-# Native apps use Hyprland's `[workspace N silent]` exec rule. Chromium webapps
-# can't: when a chromium process already exists the launcher delegates to it and
-# exits, so the rule's PID tracking misses the window. For those we launch, wait
-# for the new window of the right class, and move it by address.
 
 set -u
 
 clients() { hyprctl clients -j; }
-
-has_class() { clients | jq -e --arg s "$1" 'any(.[]; .class | contains($s))' >/dev/null; }
-
-has_foot_on() { clients | jq -e --argjson w "$1" 'any(.[]; .class == "foot" and .workspace.id == $w)' >/dev/null; }
 
 # The focused monitor and its block of workspace ids, read from Omarchy's state
 # file (block <TAB> connector <TAB> identity). Without it, fall back to 1-10.
@@ -36,33 +31,108 @@ if [[ -r $OMARCHY_BLOCKS ]]; then
 fi
 ws() { echo $(( block * 10 + $1 )); } # <slot 1-10> -> workspace id
 
+# Address of a window of exactly <class>: one already on <id> if any, else the
+# first one anywhere. Empty when none exists.
+find_window() { # <class> <workspace id>
+  clients | jq -r --arg c "$1" --argjson w "$2" '
+    [.[] | select(.class == $c)] as $all
+    | ([$all[] | select(.workspace.id == $w)] + $all)[0].address // empty'
+}
+
+on_ws() { # <class> <workspace id>
+  clients | jq -e --arg c "$1" --argjson w "$2" 'any(.[]; .class == $c and .workspace.id == $w)' >/dev/null
+}
+
+move_to() { # <window address> <workspace id>
+  hyprctl dispatch "hl.dsp.window.move({ workspace = '$2', follow = false, window = 'address:$1' })" >/dev/null
+}
+
 # Launch onto a workspace via exec rule (apps whose process owns the window)
 exec_ws() { # <workspace id> <command...>
   local id=$1; shift
   hyprctl dispatch "hl.dsp.exec_cmd('[workspace $id silent] uwsm-app -- $*')" >/dev/null
 }
 
-# Launch, then move the first new window whose class contains <substring>
-launch_move() { # <workspace id> <class-substring> <command...>
-  local id=$1 sub=$2 before new
+# Launch, then move the first new window of exactly <class>. Chromium webapps
+# need this: with chromium already running the launcher delegates and exits,
+# so an exec rule's PID tracking misses the window.
+launch_move() { # <workspace id> <class> <command...>
+  local id=$1 class=$2 before new
   shift 2
-  before=$(clients | jq -c --arg s "$sub" '[.[] | select(.class | contains($s)) | .address]')
+  before=$(clients | jq -c --arg c "$class" '[.[] | select(.class == $c) | .address]')
   setsid -f "$@" >/dev/null 2>&1
   for _ in $(seq 1 50); do
     sleep 0.2
-    new=$(clients | jq -r --arg s "$sub" --argjson b "$before" \
-      '[.[] | select(.class | contains($s)) | .address] - $b | .[0] // empty')
+    new=$(clients | jq -r --arg c "$class" --argjson b "$before" \
+      '[.[] | select(.class == $c) | .address] - $b | .[0] // empty')
     if [[ -n $new ]]; then
-      hyprctl dispatch "hl.dsp.window.move({ workspace = '$id', follow = false, window = 'address:$new' })" >/dev/null
+      move_to "$new" "$id"
       return 0
     fi
   done
-  echo "workspace-setup: no '$sub' window appeared" >&2
+  echo "workspace-setup: no '$class' window appeared" >&2
   return 1
 }
 
+# Put the app of <class> on <slot>: leave, move or launch (see header).
+place() { # <slot> <class> <launcher: exec|move> <command...>
+  local id; id=$(ws "$1")
+  local class=$2 how=$3 addr
+  shift 3
+  addr=$(find_window "$class" "$id")
+  if [[ -n $addr ]]; then
+    on_ws "$class" "$id" || move_to "$addr" "$id"
+  elif [[ $how == exec ]]; then
+    exec_ws "$id" "$*"
+  else
+    launch_move "$id" "$class" "$@"
+  fi
+}
+
+# Webapps whose URLs (private tailnet hosts) stay out of this public repo: read
+# them from the machine-local desktop entries Omarchy's webapp installer wrote.
+# The window class is what Chromium derives from the URL: "chrome-" + host
+# (port dropped) + "_" + path with every "/" as "_" + "-Default", e.g.
+#   https://box:8448/DEL/dashboard -> chrome-box__DEL_dashboard-Default
+# Match the whole class: the host alone is shared (Chat on box:8453/ is
+# chrome-box__-Default).
+webapp_url() { # <desktop entry name>
+  local entry="$HOME/.local/share/applications/$1.desktop" url
+  [[ -f $entry ]] || return 0
+  url=$(sed -n 's/^Exec=omarchy-launch-webapp //p' "$entry")
+  # The installer quotes the URL in Exec=; strip the quotes or the launcher
+  # gets a literal "https://..." and opens nothing.
+  url=${url#\"}; url=${url%\"}
+  echo "$url"
+}
+webapp_class() { # <url>
+  local host path
+  host=${1#*://}; path=/${host#*/}; host=${host%%/*}; host=${host%%:*}
+  [[ $1 == *://*/* ]] || path=/
+  echo "chrome-${host}_${path//\//_}-Default"
+}
+webapp() { # <slot> <url>
+  [[ -n $2 ]] || return 0
+  place "$1" "$(webapp_class "$2")" move omarchy-launch-webapp "$2"
+}
+
+# Terminals: launch a missing one, never take one from elsewhere.
+on_ws foot "$(ws 1)" || exec_ws "$(ws 1)" "foot -e tmux new-session -A -s main"
+on_ws foot "$(ws 2)" || exec_ws "$(ws 2)" foot
+
+place 9 signal exec signal-desktop
+
+# Chromium windows one at a time, browser first. With no chromium running yet,
+# parallel launches race for the profile lock and can end up as two browser
+# processes on one profile ("Profile error occurred" windows).
+place 10 chromium move uwsm-app -- chromium
+webapp 3 "$(webapp_url Agenty)"
+webapp 4 "$(webapp_url Chat)"
+webapp 8 "$(webapp_url Nextcloud)"
+webapp 9 'https://web.whatsapp.com/'
+
 # Hyprland creates a missing workspace on whichever monitor has focus, and
-# launching can move focus. Make sure each workspace we filled is on TARGET.
+# launching can move focus. Make sure every slot we filled sits on TARGET.
 on_target() { # <workspace id>
   local id=$1 on
   for _ in $(seq 1 15); do
@@ -74,43 +144,5 @@ on_target() { # <workspace id>
     hyprctl dispatch "hl.dsp.workspace.move({ workspace = '$id', monitor = '$TARGET' })" >/dev/null
   fi
 }
-
-# Native apps first; they don't touch chromium.
-has_foot_on "$(ws 1)" || exec_ws "$(ws 1)" "foot -e tmux new-session -A -s main"
-has_foot_on "$(ws 2)" || exec_ws "$(ws 2)" foot
-has_class signal || exec_ws "$(ws 9)" signal-desktop
-
-# Chromium windows one at a time, browser first. With no chromium running yet,
-# parallel launches race for the profile lock and can end up as two browser
-# processes on one profile ("Profile error occurred" windows).
-has_class chromium || launch_move "$(ws 10)" chromium uwsm-app -- chromium
-
-# Webapps whose URLs (private tailnet hosts) stay out of this public repo: read
-# them from the machine-local desktop entries Omarchy's webapp installer wrote.
-# The window class is what Chromium derives from the URL: "chrome-" + host
-# (port dropped) + "_" + path with every "/" as "_" + "-Default", e.g.
-#   https://box:8448/DEL/dashboard -> chrome-box__DEL_dashboard-Default
-# Match the whole class: the host alone is shared (Chat on box:8453/ is
-# chrome-box__-Default) and would count as already running.
-webapp() { # <slot> <desktop entry name>
-  local entry="$HOME/.local/share/applications/$2.desktop" url host path class
-  [[ -f $entry ]] || return 0
-  url=$(sed -n 's/^Exec=omarchy-launch-webapp //p' "$entry")
-  # The installer quotes the URL in Exec=; strip the quotes or the launcher
-  # gets a literal "https://..." and opens nothing.
-  url=${url#\"}; url=${url%\"}
-  [[ -n $url ]] || return 0
-  host=${url#*://}; path=/${host#*/}; host=${host%%/*}; host=${host%%:*}
-  [[ $url == *://*/* ]] || path=/
-  class="chrome-${host}_${path//\//_}-Default"
-  has_class "$class" || launch_move "$(ws "$1")" "$class" omarchy-launch-webapp "$url"
-}
-
-webapp 3 Agenty
-webapp 4 Chat
-webapp 8 Nextcloud
-
-has_class web.whatsapp || launch_move "$(ws 9)" web.whatsapp omarchy-launch-webapp 'https://web.whatsapp.com/'
-
 for slot in 1 2 3 4 8 9 10; do on_target "$(ws "$slot")" & done
 wait
