@@ -87,6 +87,9 @@ o.bind("SUPER + CTRL + SHIFT + L", "Move window to right monitor", hl.dsp.window
 -- Move a whole workspace between monitors with Vim directions instead of
 -- arrows, matching the H/J/K/L scheme used above. Up/down only do something
 -- on a stacked monitor layout, but keep the full set for consistency.
+-- o.workspaces.move_to_monitor, not a raw workspace.move: it renumbers the
+-- workspace into the target monitor's 1-10 block, so SUPER+N keeps working.
+-- A raw move drags the old id along and leaves a foreign number on the screen.
 unbind_all({
   "SUPER + SHIFT + ALT + LEFT", "SUPER + SHIFT + ALT + RIGHT",
   "SUPER + SHIFT + ALT + UP", "SUPER + SHIFT + ALT + DOWN",
@@ -94,10 +97,10 @@ unbind_all({
   "SUPER + SHIFT + ALT + K", "SUPER + SHIFT + ALT + L",
 })
 
-o.bind("SUPER + SHIFT + ALT + H", "Move workspace to left monitor", hl.dsp.workspace.move({ monitor = "l" }))
-o.bind("SUPER + SHIFT + ALT + J", "Move workspace to down monitor", hl.dsp.workspace.move({ monitor = "d" }))
-o.bind("SUPER + SHIFT + ALT + K", "Move workspace to up monitor", hl.dsp.workspace.move({ monitor = "u" }))
-o.bind("SUPER + SHIFT + ALT + L", "Move workspace to right monitor", hl.dsp.workspace.move({ monitor = "r" }))
+o.bind("SUPER + SHIFT + ALT + H", "Move workspace to left monitor", o.workspaces.move_to_monitor("l"))
+o.bind("SUPER + SHIFT + ALT + J", "Move workspace to down monitor", o.workspaces.move_to_monitor("d"))
+o.bind("SUPER + SHIFT + ALT + K", "Move workspace to up monitor", o.workspaces.move_to_monitor("u"))
+o.bind("SUPER + SHIFT + ALT + L", "Move workspace to right monitor", o.workspaces.move_to_monitor("r"))
 
 -- SUPER+1..0 is left to Omarchy: every monitor has its own workspaces 1-10
 -- (default/hypr/monitor-workspaces.lua), so the number acts on the focused
@@ -148,7 +151,7 @@ o.bind("SUPER + I", "Show keybindings", "omarchy-menu-keybindings")
 -- one window). "+1" cycles monitors, so with two screens it just toggles.
 unbind_all({ "SUPER + SHIFT + M" })
 o.bind("SUPER + SHIFT + M", "Move workspace to other monitor",
-  hl.dsp.workspace.move({ monitor = "+1" }))
+  o.workspaces.move_to_monitor("+1"))
 
 -- Restore the standard workspace layout (1: tmux terminal, 2: terminal,
 -- 8: Nextcloud, 9: messengers, 10: browser). Idempotent, so pressing it

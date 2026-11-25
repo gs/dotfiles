@@ -44,6 +44,29 @@ launch_move() { # <workspace> <class-substring> <command...>
   return 1
 }
 
+# Omarchy gives every monitor its own block of ten workspace ids (laptop 1-10,
+# next monitor 11-20, ...; see default/hypr/monitor-workspaces.lua). Hyprland
+# creates a missing workspace on whichever monitor is focused, so a window sent
+# to id 8 while the external monitor has focus drags the laptop's 8 onto it.
+# After launching, put each workspace back on the monitor that owns its block,
+# when that monitor is connected.
+OMARCHY_BLOCKS="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/monitor-workspaces"
+home_ws() { # <workspace id>
+  local id=$1 owner on
+  [[ -r $OMARCHY_BLOCKS ]] || return 0
+  owner=$(awk -F'\t' -v b=$(( (id - 1) / 10 )) '$1 == b { print $2 }' "$OMARCHY_BLOCKS")
+  [[ -n $owner ]] || return 0
+  hyprctl monitors -j | jq -e --arg m "$owner" 'any(.[]; .name == $m)' >/dev/null || return 0
+  for _ in $(seq 1 15); do
+    on=$(hyprctl workspaces -j | jq -r --argjson i "$id" '.[] | select(.id == $i) | .monitor')
+    [[ -n $on ]] && break
+    sleep 0.2
+  done
+  if [[ -n $on && $on != "$owner" ]]; then
+    hyprctl dispatch "hl.dsp.workspace.move({ workspace = '$id', monitor = '$owner' })" >/dev/null
+  fi
+}
+
 # Workspace 1: terminal with tmux (attach to "main" or create it)
 has_foot_on 1 || exec_ws 1 "foot -e tmux new-session -A -s main"
 
@@ -73,4 +96,7 @@ fi
 has_class web.whatsapp || launch_move 9 web.whatsapp omarchy-launch-webapp 'https://web.whatsapp.com/' &
 has_class signal || exec_ws 9 signal-desktop
 
+wait
+
+for ws in 1 2 8 9 10; do home_ws "$ws" & done
 wait
